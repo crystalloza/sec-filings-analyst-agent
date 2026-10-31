@@ -1,0 +1,24 @@
+# Secrets — never commit these
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Data and outputs (often large, regenerable)
+data/raw/
+data/cache/
+*.log
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
