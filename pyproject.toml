@@ -1,0 +1,21 @@
+[project]
+name = "sec-filings-analyst-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Crystal Loza", email = "43865093+crystalloza@users.noreply.github.com" }
+]
+requires-python = ">=3.9"
+dependencies = [
+    "duckdb>=1.4.5",
+    "python-dotenv>=1.2.1",
+    "requests>=2.32.5",
+]
+
+[project.scripts]
+sec-filings-analyst-agent = "sec_filings_analyst_agent:main"
+
+[build-system]
+requires = ["uv_build>=0.13.6,<0.14.0"]
+build-backend = "uv_build"
