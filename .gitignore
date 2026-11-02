@@ -16,6 +16,7 @@ venv/
 # Data and outputs (often large, regenerable)
 data/raw/
 data/cache/
+data/warehouse.duckdb*
 *.log
 
 # Editors / OS
