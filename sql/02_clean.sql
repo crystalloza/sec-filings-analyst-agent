@@ -80,3 +80,30 @@ INNER JOIN facts_ranked AS n
     AND n."end" = o."end"
 WHERE o.version_rank > 1
   AND o.val <> n.val;
+
+-- ---------------------------------------------------------------------------------------
+-- Step 3: Duration vs instant facts.
+-- In XBRL, whether a concept is an instant (a balance on one date, e.g. Assets) or a duration
+-- (a flow over a span, e.g. Revenues) is fixed by the concept's definition. So a missing
+-- "start" is not a judgment call: it means "instant". period_type records that explicitly so
+-- later steps filter on a word instead of repeating a NULL check.
+-- Safety net: a tag that appears as BOTH types would suggest a filing error. Such tags are
+-- flagged in period_type_conflicts (flag and continue); profiling found 13, none among the
+-- 13 concepts this project uses. Step 5 adds an expected type per mapped concept.
+-- ---------------------------------------------------------------------------------------
+CREATE TABLE facts_typed AS
+SELECT
+    f.*,
+    CASE WHEN f."start" IS NULL THEN 'instant' ELSE 'duration' END AS period_type
+FROM facts_latest AS f;
+
+CREATE TABLE period_type_conflicts AS
+SELECT
+    taxonomy,
+    tag,
+    SUM(CASE WHEN period_type = 'instant'  THEN 1 ELSE 0 END) AS instant_rows,
+    SUM(CASE WHEN period_type = 'duration' THEN 1 ELSE 0 END) AS duration_rows
+FROM facts_typed
+GROUP BY taxonomy, tag
+HAVING SUM(CASE WHEN period_type = 'instant'  THEN 1 ELSE 0 END) > 0
+   AND SUM(CASE WHEN period_type = 'duration' THEN 1 ELSE 0 END) > 0;
