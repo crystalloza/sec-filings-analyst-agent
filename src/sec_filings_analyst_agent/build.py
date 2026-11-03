@@ -40,6 +40,15 @@ def check_raw_row_count(con: duckdb.DuckDBPyConnection) -> None:
     print(f"check: raw_facts row count matches Parquet ({actual:,})")
 
 
+def check_filing_row_count(con: duckdb.DuckDBPyConnection) -> None:
+    """Reconciliation: every parsed paragraph must reach filing_paragraphs (none lost in the join)."""
+    expected = pq.read_metadata(RAW_DIR / "filing_paragraphs.parquet").num_rows
+    actual = con.execute("SELECT count(*) FROM filing_paragraphs").fetchone()[0]
+    if actual != expected:
+        raise RuntimeError(f"filing_paragraphs has {actual} rows but the Parquet file holds {expected}")
+    print(f"check: filing_paragraphs row count matches Parquet ({actual:,})")
+
+
 def build() -> Path:
     tmp_path = DB_PATH.with_name(DB_PATH.name + ".tmp")
     tmp_path.unlink(missing_ok=True)
@@ -52,6 +61,7 @@ def build() -> Path:
             con.execute(path.read_text())
             print(f"ran {path.name}")
         check_raw_row_count(con)
+        check_filing_row_count(con)
     except BaseException:
         con.close()
         tmp_path.unlink(missing_ok=True)
