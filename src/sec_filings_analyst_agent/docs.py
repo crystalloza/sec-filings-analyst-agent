@@ -154,8 +154,8 @@ def _variants(value: float, kind: str) -> list[str]:
         if millions >= 100:
             forms += [re.escape(f"{round(millions):,}"), re.escape(f"{round(millions)}")]
         billions = v / 1e9
-        if billions >= 1:
-            forms += [re.escape(f"{billions:.1f}"), re.escape(f"{billions:.2f}")]
+        if billions >= 1:  # "6.2" alone is too loose; require the word "billion" after it
+            forms += [re.escape(f"{billions:.1f}") + r"\s*billion", re.escape(f"{billions:.2f}") + r"\s*billion"]
     elif kind == "usd_per_share":
         forms.append(re.escape(f"{v:.2f}"))
     elif kind == "ratio":
@@ -166,6 +166,10 @@ def _variants(value: float, kind: str) -> list[str]:
 
 def answer_in_docs(con, question: dict, context_text: str) -> dict:
     """Is each expected figure present in the pasted text? Returns a per-figure and overall label."""
+    # A hand-set label wins over the heuristic (use it when the heuristic is known to mislead,
+    # e.g. a derived figure whose digits happen to match an unrelated number in the text).
+    if question.get("answer_in_docs"):
+        return {"overall": question["answer_in_docs"], "figures": [], "source": "manual"}
     expected = question.get("expected", [])
     if not expected:
         return {"overall": None, "figures": []}

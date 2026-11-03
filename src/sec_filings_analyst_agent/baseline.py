@@ -9,8 +9,14 @@ Two modes keep development and measurement apart:
   measured  Sonnet 5.5, eval/questions.jsonl, refuses to run unless the prompts match the hashes
             frozen in eval/prompts.lock.json (create it with --freeze once the prompts are final).
 
+Pressure test (--pressure): for questions that carry a scripted `pushback` message, the model first
+answers normally, then the user insists on the false claim and the model answers again. This
+measures whether it holds its position or caves. Each turn is logged as its own record, linked by
+`conversation_id`. The pushback text is scripted and identical for every model and run.
+
 Examples:
   uv run python -m sec_filings_analyst_agent.baseline --mode dev --variant both
+  uv run python -m sec_filings_analyst_agent.baseline --mode dev --pressure
   uv run python -m sec_filings_analyst_agent.baseline --freeze
   uv run python -m sec_filings_analyst_agent.baseline --mode measured --variant both --repeats 3
 """
@@ -68,19 +74,24 @@ def check_prompts_frozen(variants: list[str]) -> None:
                      f"the frozen prompts; if the change is deliberate, re-freeze and say why.")
 
 
-def run_one(con, question: dict, variant: str, repeat: int, mode: str, context, coverage: dict) -> dict:
-    system = SYSTEMS[variant]
-    user = render_user_prompt(format_documents(context.documents), question["question"])
+def run_turn(question: dict, variant: str, repeat: int, mode: str, context, coverage: dict,
+             messages: list[dict], turn: int, conversation_id: str | None = None,
+             pushback: str | None = None):
+    """One model call over `messages`. Returns (log record, raw assistant text or None)."""
     record = {
         "run_id": str(uuid.uuid4()),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "mode": mode, "question_id": question["id"], "variant": variant, "repeat": repeat,
+        "turn": turn, "conversation_id": conversation_id, "pushback": pushback,
         "prompt_version": PROMPT_VERSION, "prompt_hash": prompt_hash(variant),
         "documents": [d.ref() for d in context.documents], "context_notes": context.notes,
         "answer_in_docs": coverage,
     }
+    raw_text = None
     try:
-        result = complete("dev" if mode == "dev" else "measured", system, user, Answer)
+        result = complete("dev" if mode == "dev" else "measured", SYSTEMS[variant], None, Answer,
+                          messages=messages)
+        raw_text = result.raw_text
         record.update({
             "model": result.model, "requested_model": result.requested_model,
             "provider": result.provider, "request_id": result.request_id,
@@ -92,7 +103,14 @@ def run_one(con, question: dict, variant: str, repeat: int, mode: str, context, 
     except (anthropic.APIError, ValidationError) as e:
         record.update({"model": None, "cost_usd": 0.0, "parsed": None, "raw_text": None,
                        "error": f"{type(e).__name__}: {e}"[:500]})
-    return record
+    return record, raw_text
+
+
+def describe(rec: dict) -> str:
+    if rec["error"]:
+        return rec["error"]
+    p = rec["parsed"]
+    return "declined" if p and p["declined"] else f"{len(p['figures'])} figures"
 
 
 def main() -> None:
@@ -102,6 +120,8 @@ def main() -> None:
     p.add_argument("--repeats", type=int, default=1)
     p.add_argument("--questions", type=Path, default=None)
     p.add_argument("--limit", type=int, default=None, help="only the first N questions")
+    p.add_argument("--pressure", action="store_true",
+                   help="multi-turn pressure test: only questions with a scripted `pushback`")
     p.add_argument("--max-cost", type=float, default=3.0, help="stop if spend would exceed this (USD)")
     p.add_argument("--freeze", action="store_true", help="record the current prompt hashes and exit")
     args = p.parse_args()
@@ -114,33 +134,47 @@ def main() -> None:
     if args.mode == "measured":
         check_prompts_frozen(variants)
     questions = load_questions(args.questions or QUESTION_FILES[args.mode])
+    if args.pressure:
+        questions = [q for q in questions if q.get("pushback")]
+        if not questions:
+            sys.exit("No questions with a `pushback` field in this question file.")
     if args.limit:
         questions = questions[: args.limit]
 
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = RUNS_DIR / f"{args.mode}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
+    tag = "pressure" if args.pressure else args.mode
+    out_path = RUNS_DIR / f"{args.mode}_{tag}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
+    if args.mode == "dev" and not args.pressure:
+        out_path = RUNS_DIR / f"dev_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
     con = duckdb.connect(str(DB_PATH), read_only=True)
     spent, calls, errors = 0.0, 0, 0
     with out_path.open("a") as out:
         for q in questions:
             context = load_context(con, q)
-            coverage = answer_in_docs(con, q, format_documents(context.documents))
+            documents_text = format_documents(context.documents)
+            coverage = answer_in_docs(con, q, documents_text)
+            first_user = {"role": "user", "content": render_user_prompt(documents_text, q["question"])}
             for variant in variants:
                 for repeat in range(args.repeats):
                     if spent >= args.max_cost:
                         print(f"Stopping: spend ${spent:.3f} reached --max-cost ${args.max_cost}")
                         print(f"Partial results in {out_path.relative_to(ROOT)}")
                         return
-                    rec = run_one(con, q, variant, repeat, args.mode, context, coverage)
-                    out.write(json.dumps(rec) + "\n")
-                    out.flush()
-                    spent += rec["cost_usd"]
-                    calls += 1
-                    errors += rec["error"] is not None
-                    status = rec["error"] or ("declined" if rec["parsed"] and rec["parsed"]["declined"]
-                                              else f"{len(rec['parsed']['figures'])} figures")
-                    print(f"{q['id']} {variant} r{repeat}: {status} "
-                          f"(${rec['cost_usd']:.4f}, in-docs: {coverage['overall']})")
+                    conv_id = str(uuid.uuid4()) if args.pressure else None
+                    rec1, raw1 = run_turn(q, variant, repeat, args.mode, context, coverage,
+                                          [first_user], turn=1, conversation_id=conv_id)
+                    out.write(json.dumps(rec1) + "\n"); out.flush()
+                    spent += rec1["cost_usd"]; calls += 1; errors += rec1["error"] is not None
+                    line = f"{q['id']} {variant} r{repeat} t1: {describe(rec1)} (${rec1['cost_usd']:.4f})"
+                    if args.pressure and raw1 is not None:
+                        history = [first_user, {"role": "assistant", "content": raw1},
+                                   {"role": "user", "content": q["pushback"]}]
+                        rec2, _ = run_turn(q, variant, repeat, args.mode, context, coverage,
+                                           history, turn=2, conversation_id=conv_id, pushback=q["pushback"])
+                        out.write(json.dumps(rec2) + "\n"); out.flush()
+                        spent += rec2["cost_usd"]; calls += 1; errors += rec2["error"] is not None
+                        line += f" | t2: {describe(rec2)} (${rec2['cost_usd']:.4f})"
+                    print(line + f" | in-docs: {coverage['overall']}")
     print(f"\n{calls} calls, {errors} errors, ${spent:.4f} total -> {out_path.relative_to(ROOT)}")
 
 

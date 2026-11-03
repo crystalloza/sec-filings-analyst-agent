@@ -74,11 +74,18 @@ def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
 def complete(
     alias: str,
     system: str,
-    user: str,
+    user: Optional[str],
     output_model: type[BaseModel],
     max_tokens: int = 16000,
+    messages: Optional[list[dict]] = None,
 ) -> LLMResult:
-    """One model call that must return `output_model`. `alias` is 'dev' or 'measured'."""
+    """One model call that must return `output_model`. `alias` is 'dev' or 'measured'.
+
+    Pass either `user` (a single user turn) or `messages` (a full conversation; the API is
+    stateless, so a multi-turn exchange resends the whole history every call).
+    """
+    if messages is None:
+        messages = [{"role": "user", "content": user}]
     provider = os.environ.get("LLM_PROVIDER", "anthropic")
     model = MODELS[alias][provider]
     client = make_client(provider)
@@ -87,7 +94,7 @@ def complete(
         model=model,
         max_tokens=max_tokens,
         system=system,
-        messages=[{"role": "user", "content": user}],
+        messages=messages,
         output_format=output_model,
     )
     start = time.time()
