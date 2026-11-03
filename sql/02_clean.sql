@@ -161,7 +161,7 @@ FROM facts_classified
 WHERE duration_class = 'other';
 
 -- ---------------------------------------------------------------------------------------
--- Step 5: Concept mapping -> clean_facts.
+-- Step 5: Concept mapping -> facts_concepts.
 -- Until now rows were keyed by raw SEC tags. Here the project's own CONCEPTS replace them.
 -- concept_map is the explicit allowlist: which tag(s) feed each concept, in what priority
 -- order, and what period type (instant/duration) the concept must have. It is data, not
@@ -252,8 +252,8 @@ INNER JOIN facts_candidates AS o
     AND o."start" IS NOT DISTINCT FROM w."start"
 WHERE w.tag_rank = 1 AND o.tag_rank > 1 AND w.val <> o.val;
 
--- clean_facts: one row per company + concept + period, with quality flags.
-CREATE TABLE clean_facts AS
+-- facts_concepts: one row per company + concept + period, with quality flags.
+CREATE TABLE facts_concepts AS
 WITH winners AS (
     SELECT
         w.cik, w.entity_name, w.concept, w.role, w.tag AS source_tag, w.taxonomy, w.unit,
@@ -278,3 +278,114 @@ SELECT
     winners.*,
     (has_tag_disagreement OR was_restated) AS exclude_from_questions
 FROM winners;
+
+-- ---------------------------------------------------------------------------------------
+-- Step 6: Fiscal labels, the FY2018+ window, and the final clean_facts table.
+-- Each company names its fiscal year by the calendar year in which it ENDS (NVIDIA's FY2026
+-- ended 2026-01-25; Microsoft's ended 2026-06-30), so fiscal_year = the year of the fiscal
+-- year-end the period belongs to. Labels come from this explicit calendar table plus the
+-- period's end date. The SEC's fy/fp are NOT used (they describe the filing, not the period);
+-- they are kept as filing_fy / filing_fp for reference only.
+-- 52/53-week years make period ends wobble by several days (AMD 12-25..12-31, NVIDIA 01-25..
+-- 01-31, and quarters can end on the 1st of the next month). Shifting the end date back 7
+-- days (anchor_date) lands it in the intended month, so months_after_fye is exactly 0, 3, 6, 9.
+-- Cross-company alignment: each company keeps its OWN fiscal year; comparisons across companies
+-- can span up to ~11 months (README limitation). True calendarization is a later iteration.
+-- period_start / period_end replace the reserved-word names "start" / "end" (raw keeps the
+-- SEC's names). Rows before FY2018 are kept and marked in_window = FALSE.
+-- Portability note: INTERVAL arithmetic and MOD are written ANSI-style; Databricks may need
+-- date_sub for the 7-day shift.
+-- ---------------------------------------------------------------------------------------
+CREATE TABLE fiscal_calendar (
+    cik                   BIGINT,
+    ticker                VARCHAR,
+    fiscal_year_end_month INTEGER,   -- month in which the fiscal year ends
+    note                  VARCHAR
+);
+
+INSERT INTO fiscal_calendar VALUES
+    (1045810, 'NVDA', 1,  'Last Sunday of January; FY named for the year it ends (FY2026 ended 2026-01-25)'),
+    (2488,    'AMD',  12, 'Last Saturday of December (52/53-week year)'),
+    (50863,   'INTC', 12, 'Last Saturday of December (52/53-week year)'),
+    (789019,  'MSFT', 6,  'June 30');
+
+CREATE TABLE clean_facts AS
+WITH anchored AS (
+    SELECT
+        f.*,
+        c.ticker,
+        c.fiscal_year_end_month AS fye_month,
+        CAST(f."end" AS DATE) - INTERVAL '7' DAY AS anchor_date
+    FROM facts_concepts AS f
+    LEFT JOIN fiscal_calendar AS c
+        ON c.cik = f.cik
+),
+offsets AS (
+    SELECT
+        a.*,
+        MOD(MONTH(a.anchor_date) - a.fye_month + 12, 12) AS months_after_fye,
+        CASE WHEN MONTH(a.anchor_date) <= a.fye_month
+             THEN YEAR(a.anchor_date) ELSE YEAR(a.anchor_date) + 1 END AS fiscal_year
+    FROM anchored AS a
+),
+labeled AS (
+    SELECT
+        o.*,
+        CASE
+            WHEN o.period_type = 'instant' THEN
+                CASE o.months_after_fye
+                    WHEN 3 THEN 'Q1' WHEN 6 THEN 'Q2' WHEN 9 THEN 'Q3' WHEN 0 THEN 'FY' END
+            WHEN o.duration_class = 'quarterly' THEN
+                CASE o.months_after_fye
+                    WHEN 3 THEN 'Q1' WHEN 6 THEN 'Q2' WHEN 9 THEN 'Q3' WHEN 0 THEN 'Q4' END
+            WHEN o.duration_class = 'ytd_6m' THEN
+                CASE WHEN o.months_after_fye = 6 THEN 'H1' END
+            WHEN o.duration_class = 'ytd_9m' THEN
+                CASE WHEN o.months_after_fye = 9 THEN '9M' END
+            WHEN o.duration_class = 'annual' THEN
+                CASE WHEN o.months_after_fye = 0 THEN 'FY' END
+        END AS fiscal_period
+    FROM offsets AS o
+)
+SELECT
+    l.cik, l.ticker, l.entity_name, l.concept, l.role, l.source_tag, l.unit,
+    l.period_type, l.duration_class, l.duration_days,
+    l."start" AS period_start, l."end" AS period_end,
+    l.fiscal_year, l.fiscal_period,
+    (l.fiscal_year >= 2018) AS in_window,
+    l.val, l.accn, l.form, l.filed,
+    l.fy AS filing_fy, l.fp AS filing_fp, l.frame,
+    l.has_tag_disagreement, l.was_restated, l.exclude_from_questions
+FROM labeled AS l;
+
+-- Stand-alone Q4: a 3-month span ending at the fiscal year-end is a REPORTED Q4 (labelled 'Q4').
+-- Profiling found these exist for AMD, MSFT and NVDA only up to FY2020 (none afterwards, and
+-- none for Intel), so Q4 questions for FY2021+ cannot be answered from reported data; Q4 is not
+-- derived (annual minus 9-month YTD) in this MVP.
+--
+-- Safety net (flag and continue): the period LENGTH (step 4) and the period END MONTH (this
+-- step) are two independent signals. If they disagree (e.g. a 6-month span that does not end
+-- at a fiscal mid-year), fiscal_period is NULL and the row is listed here.
+CREATE TABLE fiscal_period_conflicts AS
+SELECT cik, ticker, concept, source_tag, period_type, duration_class, period_start, period_end, val
+FROM clean_facts
+WHERE fiscal_period IS NULL;
+
+-- Second safety net (flag and continue): two rows that claim the SAME company, concept, fiscal
+-- year and fiscal period. They are the same real period reported with a start date one day
+-- apart (52/53-week boundaries) or an end date a couple of days apart, so step 2 treated them
+-- as different periods. Profiling found every such pair is before FY2018 (outside the window),
+-- and the values agree. Listed here so it is visible, not silently ignored.
+CREATE TABLE duplicate_period_labels AS
+SELECT
+    f.cik, f.ticker, f.concept, f.fiscal_year, f.fiscal_period,
+    f.period_start, f.period_end, f.val, f.accn, f.form, f.in_window
+FROM clean_facts AS f
+INNER JOIN (
+    SELECT cik, concept, fiscal_year, fiscal_period
+    FROM clean_facts
+    GROUP BY cik, concept, fiscal_year, fiscal_period
+    HAVING COUNT(*) > 1
+) AS d
+    ON  d.cik = f.cik AND d.concept = f.concept
+    AND d.fiscal_year = f.fiscal_year AND d.fiscal_period = f.fiscal_period;
