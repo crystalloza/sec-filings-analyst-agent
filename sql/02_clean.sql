@@ -363,7 +363,9 @@ SELECT
     (l.fiscal_year >= 2018) AS in_window,
     l.val, l.accn, l.form, l.filed,
     l.fy AS filing_fy, l.fp AS filing_fp, l.frame,
-    l.has_tag_disagreement, l.was_restated, l.exclude_from_questions
+    l.has_tag_disagreement, l.was_restated, l.exclude_from_questions,
+    FALSE AS is_derived,                       -- TRUE only for rows computed in step 7
+    CAST(NULL AS VARCHAR) AS derivation        -- plain-language recipe for derived rows
 FROM labeled AS l;
 
 -- Stand-alone Q4: a 3-month span ending at the fiscal year-end is a REPORTED Q4 (labelled 'Q4').
@@ -397,3 +399,69 @@ INNER JOIN (
 ) AS d
     ON  d.cik = f.cik AND d.concept = f.concept
     AND d.fiscal_year = f.fiscal_year AND d.fiscal_period = f.fiscal_period;
+
+-- ---------------------------------------------------------------------------------------
+-- Step 7: Derived Q4 (flagged, never mixed up with reported values).
+-- A fourth quarter is not filed on its own: the 10-K covers the whole year, so Q4 = the fiscal
+-- year minus the first nine months. Stand-alone Q4 facts exist only through FY2020 for AMD,
+-- MSFT and NVDA (and never for Intel). For every other year, Q4 is DERIVED here and written
+-- into clean_facts with is_derived = TRUE and the recipe in `derivation`. A reported Q4 is
+-- never overwritten. Rules:
+--   * Only concepts where subtraction is valid (derivable_concepts). Diluted EPS is NOT:
+--     share counts differ between the year and the first nine months, so annual minus 9M is
+--     not a meaningful quarterly EPS. EPS Q4 stays unavailable after FY2020.
+--   * Needs both the annual figure and the 9-month year-to-date figure for the same fiscal
+--     year, starting on (about) the same date.
+--   * A derived row inherits the flags of its components (a restated or disagreeing input makes
+--     the derived row excluded from questions too).
+--   * accn/form/filed/frame/source_tag are NULL: no single filing reports a derived value.
+-- ---------------------------------------------------------------------------------------
+CREATE TABLE derivable_concepts (
+    concept VARCHAR,
+    reason  VARCHAR
+);
+
+INSERT INTO derivable_concepts VALUES
+    ('revenue',                  'Flow over a period: Q4 = FY - 9M'),
+    ('cost_of_revenue',          'Flow over a period: Q4 = FY - 9M'),
+    ('gross_profit',             'Flow over a period: Q4 = FY - 9M'),
+    ('operating_income',         'Flow over a period: Q4 = FY - 9M'),
+    ('net_income',               'Flow over a period: Q4 = FY - 9M'),
+    ('research_and_development', 'Flow over a period: Q4 = FY - 9M');
+
+INSERT INTO clean_facts (
+    cik, ticker, entity_name, concept, role, source_tag, tag_priority, unit,
+    period_type, duration_class, duration_days, period_start, period_end,
+    fiscal_year, fiscal_period, in_window, val, accn, form, filed,
+    filing_fy, filing_fp, frame,
+    has_tag_disagreement, was_restated, exclude_from_questions, is_derived, derivation
+)
+SELECT
+    a.cik, a.ticker, a.entity_name, a.concept, a.role,
+    CAST(NULL AS VARCHAR), CAST(NULL AS INTEGER), a.unit,
+    'duration', 'quarterly',
+    date_diff('day', CAST(n.period_end AS DATE) + INTERVAL '1' DAY, a.period_end),
+    CAST(CAST(n.period_end AS DATE) + INTERVAL '1' DAY AS DATE),
+    a.period_end,
+    a.fiscal_year, 'Q4', a.in_window,
+    a.val - n.val,
+    CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS DATE),
+    CAST(NULL AS INTEGER), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+    (a.has_tag_disagreement OR n.has_tag_disagreement),
+    (a.was_restated OR n.was_restated),
+    (a.exclude_from_questions OR n.exclude_from_questions),
+    TRUE,
+    'DERIVED, not reported: fiscal-year total (accn ' || a.accn || ') minus 9-month year-to-date (accn ' || n.accn || ')'
+FROM clean_facts AS a
+INNER JOIN clean_facts AS n
+    ON  n.cik = a.cik AND n.concept = a.concept AND n.fiscal_year = a.fiscal_year
+    AND a.fiscal_period = 'FY'  AND a.duration_class = 'annual'
+    AND n.fiscal_period = '9M'  AND n.duration_class = 'ytd_9m'
+    AND ABS(date_diff('day', a.period_start, n.period_start)) <= 3
+INNER JOIN derivable_concepts AS d
+    ON d.concept = a.concept
+WHERE NOT EXISTS (
+    SELECT 1 FROM clean_facts AS q
+    WHERE q.cik = a.cik AND q.concept = a.concept AND q.fiscal_year = a.fiscal_year
+      AND q.fiscal_period = 'Q4' AND q.period_type = 'duration'
+);
