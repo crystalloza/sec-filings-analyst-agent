@@ -184,10 +184,11 @@ CREATE TABLE concept_map (
     unit                 VARCHAR,
     priority             INTEGER,   -- 1 = preferred
     expected_period_type VARCHAR,   -- 'instant' or 'duration'
-    note                 VARCHAR
+    note                 VARCHAR,
+    cross_check          BOOLEAN DEFAULT TRUE  -- FALSE: fallback tag with a known broader definition; not compared to the primary
 );
 
-INSERT INTO concept_map VALUES
+INSERT INTO concept_map (concept, role, taxonomy, tag, unit, priority, expected_period_type, note) VALUES
     ('revenue', 'reported', 'us-gaap', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'USD', 1, 'duration', 'Standard tag since the new revenue standard'),
     ('revenue', 'reported', 'us-gaap', 'Revenues',                                            'USD', 2, 'duration', 'Used by NVIDIA; broader definition in principle, agrees in practice'),
     ('revenue', 'reported', 'us-gaap', 'SalesRevenueNet',                                     'USD', 3, 'duration', 'Deprecated 2018-01-31; legacy fallback'),
@@ -202,14 +203,21 @@ INSERT INTO concept_map VALUES
     ('total_liabilities', 'reported', 'us-gaap', 'Liabilities',                               'USD', 1, 'instant', 'Not reported by AMD or Intel: unavailable, derivable on request from components'),
     ('stockholders_equity', 'reported', 'us-gaap', 'StockholdersEquity',                      'USD', 1, 'instant', 'Parent-company equity'),
     ('cash_and_equivalents', 'reported', 'us-gaap', 'CashAndCashEquivalentsAtCarryingValue',  'USD', 1, 'instant', NULL),
+    ('cash_and_equivalents', 'reported', 'us-gaap', 'CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents', 'USD', 2, 'instant', 'Fallback: cash-flow-statement tag that INCLUDES restricted cash. Intel used only this tag from FY2021 to Q1 2025. Equal to the primary wherever both exist except 2025-12-27 (+3.1%). Not verified inside the gap (prototype decision)'),
     ('inventory', 'reported', 'us-gaap', 'InventoryNet',                                      'USD', 1, 'instant', NULL),
     ('liabilities_and_equity', 'component', 'us-gaap', 'LiabilitiesAndStockholdersEquity',    'USD', 1, 'instant', 'Component for deriving total_liabilities'),
     ('stockholders_equity_incl_nci', 'component', 'us-gaap', 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest', 'USD', 1, 'instant', 'Component for deriving total_liabilities; needed for Intel (noncontrolling interest)');
 
+-- The cash fallback INCLUDES restricted cash, so it legitimately differs a little from the primary
+-- tag (AMD/NVIDIA by 0.1-1.7%). It is used only when the primary tag is missing, so it is exempt
+-- from the agreement check (which would otherwise flag and exclude many correct periods).
+UPDATE concept_map SET cross_check = FALSE
+WHERE tag = 'CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents';
+
 -- Every fact whose tag is on the allowlist, with its concept and priority.
 CREATE TABLE facts_mapped AS
 SELECT
-    m.concept, m.role, m.priority, m.expected_period_type,
+    m.concept, m.role, m.priority, m.expected_period_type, m.cross_check,
     f.cik, f.entity_name, f.taxonomy, f.tag, f.unit,
     f."start", f."end", f.val, f.accn, f.fy, f.fp, f.form, f.filed, f.frame,
     f.period_type, f.duration_days, f.duration_class
@@ -250,13 +258,13 @@ FROM facts_candidates AS w
 INNER JOIN facts_candidates AS o
     ON  o.cik = w.cik AND o.concept = w.concept AND o."end" = w."end"
     AND o."start" IS NOT DISTINCT FROM w."start"
-WHERE w.tag_rank = 1 AND o.tag_rank > 1 AND w.val <> o.val;
+WHERE w.tag_rank = 1 AND o.tag_rank > 1 AND o.cross_check AND w.val <> o.val;
 
 -- facts_concepts: one row per company + concept + period, with quality flags.
 CREATE TABLE facts_concepts AS
 WITH winners AS (
     SELECT
-        w.cik, w.entity_name, w.concept, w.role, w.tag AS source_tag, w.taxonomy, w.unit,
+        w.cik, w.entity_name, w.concept, w.role, w.tag AS source_tag, w.priority AS tag_priority, w.taxonomy, w.unit,
         w.period_type, w.duration_class, w.duration_days, w."start", w."end", w.val,
         w.accn, w.form, w.filed, w.fy, w.fp, w.frame,
         (d.flag IS NOT NULL) AS has_tag_disagreement,
@@ -348,7 +356,7 @@ labeled AS (
     FROM offsets AS o
 )
 SELECT
-    l.cik, l.ticker, l.entity_name, l.concept, l.role, l.source_tag, l.unit,
+    l.cik, l.ticker, l.entity_name, l.concept, l.role, l.source_tag, l.tag_priority, l.unit,
     l.period_type, l.duration_class, l.duration_days,
     l."start" AS period_start, l."end" AS period_end,
     l.fiscal_year, l.fiscal_period,
