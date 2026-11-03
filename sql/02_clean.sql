@@ -29,3 +29,54 @@ SELECT r.*
 FROM raw_facts AS r
 INNER JOIN allowed_forms AS f
     ON r.form = f.form;
+
+-- ---------------------------------------------------------------------------------------
+-- Step 2: Restatements - one answer per period.
+-- The same period is reported in several filings (comparatives, corrections). Rules:
+--   * Period identity = company + taxonomy + tag + unit + start + end. (start is NULL for
+--     instant facts; window PARTITION BY treats NULLs as equal, so they group correctly.)
+--   * The LATEST filed copy wins. Ties on the filed date are broken by the higher accession
+--     number (the filer's sequence number for that year).
+--   * Superseded copies are not silently dropped. Where a superseded copy's VALUE differs
+--     from the winner, it is recorded in restated_facts with the old value, new value, and
+--     size of the change. Identical repeats (the common case) are not recorded.
+-- Decided for an MVP: "as originally reported" views are out of scope (see README limits).
+-- ---------------------------------------------------------------------------------------
+
+-- Intermediate: every in-scope row numbered newest-first within its period.
+CREATE TABLE facts_ranked AS
+SELECT
+    f.*,
+    ROW_NUMBER() OVER (
+        PARTITION BY f.taxonomy, f.tag, f.unit, f.cik, f."start", f."end"
+        ORDER BY f.filed DESC, f.accn DESC
+    ) AS version_rank
+FROM facts_in_form_scope AS f;
+
+-- The winners: exactly one row per period. Columns listed explicitly (not SELECT * EXCEPT)
+-- to keep the SQL portable.
+CREATE TABLE facts_latest AS
+SELECT
+    cik, entity_name, taxonomy, tag, label, description, unit,
+    "start", "end", val, accn, fy, fp, form, filed, frame, source_file, fetched_at
+FROM facts_ranked
+WHERE version_rank = 1;
+
+-- The audit trail: periods whose value changed between filings.
+CREATE TABLE restated_facts AS
+SELECT
+    o.cik, o.entity_name, o.taxonomy, o.tag, o.unit, o."start", o."end",
+    o.val   AS superseded_val,   o.accn AS superseded_accn,
+    o.form  AS superseded_form,  o.filed AS superseded_filed,
+    n.val   AS latest_val,       n.accn AS latest_accn,
+    n.form  AS latest_form,      n.filed AS latest_filed,
+    n.val - o.val AS change_abs,
+    CASE WHEN o.val <> 0 THEN (n.val - o.val) / ABS(o.val) END AS change_pct
+FROM facts_ranked AS o
+INNER JOIN facts_ranked AS n
+    ON  n.version_rank = 1
+    AND n.taxonomy = o.taxonomy AND n.tag = o.tag AND n.unit = o.unit AND n.cik = o.cik
+    AND n."start" IS NOT DISTINCT FROM o."start"
+    AND n."end" = o."end"
+WHERE o.version_rank > 1
+  AND o.val <> n.val;
