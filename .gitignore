@@ -23,3 +23,6 @@ data/warehouse.duckdb*
 .vscode/
 .idea/
 .DS_Store
+
+# Baseline dev runs are throwaway; measured runs (eval/runs/measured_*) are committed as evidence
+eval/runs/dev_*.jsonl
