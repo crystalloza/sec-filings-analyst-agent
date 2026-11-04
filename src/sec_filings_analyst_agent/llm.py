@@ -64,7 +64,8 @@ class LLMResult:
 @lru_cache(maxsize=None)
 def make_client(provider: str):
     if provider == "anthropic":
-        return anthropic.Anthropic()  # credentials come from the environment
+        # A hung connection must fail (and be retried) instead of blocking a worker thread forever.
+        return anthropic.Anthropic(timeout=300.0, max_retries=3)  # credentials come from the environment
     raise NotImplementedError(
         f"Provider {provider!r} is not implemented. Add a branch here (and entries in MODELS)."
     )

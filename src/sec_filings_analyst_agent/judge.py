@@ -366,7 +366,7 @@ def main() -> None:
             if r.get("parsed"):
                 done.add((r["item_id"], r["criterion"], r["run"]))
     spent = run_judge(items, args.n, out, args.max_cost, docs_for, done=done)
-    print(f"spent ${spent:.2f} -> {out.relative_to(ROOT)}")
+    print(f"spent ${spent:.2f} -> {out.resolve().relative_to(ROOT)}")
     summarize(out)
     if args.trial:
         show_trial(read(out), items)
