@@ -36,7 +36,7 @@ from pydantic import ValidationError
 
 from sec_filings_analyst_agent.build import DB_PATH, ROOT
 from sec_filings_analyst_agent.docs import answer_in_docs, format_documents, load_context
-from sec_filings_analyst_agent.llm import complete
+from sec_filings_analyst_agent.llm import EFFORT, MODELS, complete
 from sec_filings_analyst_agent.prompts import PROMPT_VERSION, SYSTEMS, prompt_hash, render_user_prompt
 from sec_filings_analyst_agent.schemas import Answer
 
@@ -57,9 +57,14 @@ def load_questions(path: Path) -> list[dict]:
     return questions
 
 
+def current_config() -> dict:
+    """What besides the prompts defines a measured run: which models, at what effort."""
+    return {"models": MODELS, "effort": EFFORT}
+
+
 def freeze_prompts() -> None:
     lock = {"version": PROMPT_VERSION, "frozen_at": datetime.now(timezone.utc).isoformat(),
-            "hashes": {v: prompt_hash(v) for v in SYSTEMS}}
+            "hashes": {v: prompt_hash(v) for v in SYSTEMS}, "config": current_config()}
     LOCK_PATH.write_text(json.dumps(lock, indent=2) + "\n")
     print(f"Froze prompts {lock['hashes']} -> {LOCK_PATH.relative_to(ROOT)}")
 
@@ -68,6 +73,8 @@ def check_prompts_frozen(variants: list[str]) -> None:
     if not LOCK_PATH.exists():
         sys.exit("No prompt lock. Finish developing the prompts, then run with --freeze first.")
     lock = json.loads(LOCK_PATH.read_text())
+    if lock.get("config") != current_config():
+        sys.exit("The model or effort configuration no longer matches the frozen one. Re-freeze if deliberate.")
     for v in variants:
         if lock["hashes"].get(v) != prompt_hash(v):
             sys.exit(f"Variant {v} no longer matches the frozen prompt. A measured run must use "
@@ -94,7 +101,7 @@ def run_turn(question: dict, variant: str, repeat: int, mode: str, context, cove
         raw_text = result.raw_text
         record.update({
             "model": result.model, "requested_model": result.requested_model,
-            "provider": result.provider, "request_id": result.request_id,
+            "provider": result.provider, "effort": result.effort, "request_id": result.request_id,
             "stop_reason": result.stop_reason, "input_tokens": result.input_tokens,
             "output_tokens": result.output_tokens, "cost_usd": round(result.cost_usd, 5),
             "latency_s": result.latency_s, "raw_text": result.raw_text,
@@ -104,6 +111,17 @@ def run_turn(question: dict, variant: str, repeat: int, mode: str, context, cove
         record.update({"model": None, "cost_usd": 0.0, "parsed": None, "raw_text": None,
                        "error": f"{type(e).__name__}: {e}"[:500]})
     return record, raw_text
+
+
+def load_done(path: Path) -> set[tuple]:
+    """Calls already completed successfully in an existing runs file (question, variant, repeat, turn)."""
+    done = set()
+    for line in path.read_text().splitlines():
+        if line.strip():
+            r = json.loads(line)
+            if not r.get("error") and r.get("parsed") is not None:
+                done.add((r["question_id"], r["variant"], r["repeat"], r.get("turn") or 1))
+    return done
 
 
 def describe(rec: dict) -> str:
@@ -124,6 +142,8 @@ def main() -> None:
                    help="multi-turn pressure test: only questions with a scripted `pushback`")
     p.add_argument("--max-cost", type=float, default=3.0, help="stop if spend would exceed this (USD)")
     p.add_argument("--freeze", action="store_true", help="record the current prompt hashes and exit")
+    p.add_argument("--resume", type=Path, default=None,
+                   help="continue an interrupted (non-pressure) run: skip finished calls, retry failed ones, append to this file")
     args = p.parse_args()
 
     if args.freeze:
@@ -144,6 +164,12 @@ def main() -> None:
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
     kind = f"{args.mode}_pressure" if args.pressure else args.mode
     out_path = RUNS_DIR / f"{kind}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
+    done: set[tuple] = set()
+    if args.resume:
+        if args.pressure:
+            sys.exit("--resume supports normal runs only; pressure runs are small, just rerun them.")
+        out_path, done = args.resume, load_done(args.resume)
+        print(f"Resuming {out_path.name}: {len(done)} calls already done")
     con = duckdb.connect(str(DB_PATH), read_only=True)
     spent, calls, errors = 0.0, 0, 0
     with out_path.open("a") as out:
@@ -154,6 +180,8 @@ def main() -> None:
             first_user = {"role": "user", "content": render_user_prompt(documents_text, q["question"])}
             for variant in variants:
                 for repeat in range(args.repeats):
+                    if (q["id"], variant, repeat, 1) in done:
+                        continue
                     if spent >= args.max_cost:
                         print(f"Stopping: spend ${spent:.3f} reached --max-cost ${args.max_cost}")
                         print(f"Partial results in {out_path.relative_to(ROOT)}")

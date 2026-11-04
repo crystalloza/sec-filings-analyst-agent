@@ -1,0 +1,22 @@
+{
+  "version": "baseline-v2",
+  "frozen_at": "2026-11-04T00:25:53.284607+00:00",
+  "hashes": {
+    "A": "c3c8b067fb7cbdb5",
+    "B": "f1be0c889066f807"
+  },
+  "config": {
+    "models": {
+      "dev": {
+        "anthropic": "claude-haiku-5-5"
+      },
+      "measured": {
+        "anthropic": "claude-sonnet-5-5"
+      }
+    },
+    "effort": {
+      "dev": "medium",
+      "measured": "high"
+    }
+  }
+}

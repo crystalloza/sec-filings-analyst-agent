@@ -15,7 +15,7 @@ import json
 
 from sec_filings_analyst_agent.schemas import Answer
 
-PROMPT_VERSION = "baseline-v1"
+PROMPT_VERSION = "baseline-v2"
 
 _FORMAT_RULES = """\
 Respond with the JSON object described by the schema and nothing else.

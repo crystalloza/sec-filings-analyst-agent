@@ -44,8 +44,9 @@ class Figure(BaseModel):
         description="FY for a full fiscal year, Q1-Q4 for a single quarter, other if unclear."
     )
     source_quote: str = Field(
-        description="A short passage copied from the documents that supports the figure. "
-        "Empty string if the figure was calculated rather than quoted."
+        description="A short passage copied exactly from the documents that supports the figure, "
+        "and that includes the figure's own number as written there (for example the full table row "
+        "or the full sentence). Empty string if the figure was calculated rather than quoted."
     )
     is_computed: bool = Field(
         description="True if you calculated this figure from other figures instead of reading it."

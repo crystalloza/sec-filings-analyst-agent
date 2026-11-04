@@ -78,3 +78,10 @@ def test_random_rounding_cases_agree_with_round():
         v, step = round(ref, d), 10 ** -d
         assert rounds_to(v, ref)
         assert not rounds_to(v + 1.01 * step, ref) and not rounds_to(v - 1.01 * step, ref)
+
+
+def test_bare_numbers_after_a_word_are_found_but_labels_glued_to_letters_are_not():
+    assert [t.value for t in prose_numbers("China and over 150 countries were designated")] == [150.0]
+    assert [t.value for t in prose_numbers("a 120-day compliance period")] == [120.0]
+    assert prose_numbers("in Q2 and FY23 and H1") == []
+    assert prose_numbers("see Item 10 and Note 16 and fiscal 2024") == []

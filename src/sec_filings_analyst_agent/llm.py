@@ -27,6 +27,10 @@ MODELS = {
     "measured": {"anthropic": "claude-sonnet-5-5"},  # the model reported in results
 }
 
+# Reasoning effort per alias. These are the models' own defaults, written down so runs are reproducible
+# and the same setting can be reused for the agent.
+EFFORT = {"dev": "medium", "measured": "high"}
+
 # (input, output) USD per million tokens. Haiku's price rises for prompts over 100K tokens.
 PRICES = {
     "claude-haiku-5-5": {"standard": (0.10, 0.50), "long": (0.50, 2.50)},
@@ -48,6 +52,7 @@ class LLMResult:
     model: str  # the model that actually served the request
     requested_model: str
     provider: str
+    effort: str
     input_tokens: int
     output_tokens: int
     cost_usd: float
@@ -96,6 +101,7 @@ def complete(
         system=system,
         messages=messages,
         output_format=output_model,
+        output_config={"effort": EFFORT[alias]},
     )
     start = time.time()
     if provider == "anthropic" and model in SERVER_FALLBACK_MODELS:
@@ -113,6 +119,7 @@ def complete(
         model=response.model,
         requested_model=model,
         provider=provider,
+        effort=EFFORT[alias],
         input_tokens=usage.input_tokens,
         output_tokens=usage.output_tokens,
         cost_usd=estimate_cost(model, usage.input_tokens, usage.output_tokens),

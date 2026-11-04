@@ -101,11 +101,12 @@ def prose_numbers(text: str) -> list[ProseNumber]:
         num = m.group("num")
         tail = (m.group("tail") or "").strip().lower()
         has_marker = bool(m.group("cur") or tail or "," in num or "." in num)
-        before = text[max(0, m.start() - 12): m.start()]
+        num_start = m.start("num")  # the match may begin at the space before the number
+        before = text[max(0, num_start - 12): num_start]
         if not has_marker:
             if _YEAR.match(num) or _CONTEXT_BEFORE.search(before):
                 continue
-            if m.start() > 0 and text[m.start() - 1].isalpha():  # Q2, FY23, H1
+            if num_start > 0 and text[num_start - 1].isalpha():  # glued to a letter: Q2, FY23, H1
                 continue
             if _FORM_SUFFIX.match(text[m.end(): m.end() + 3]):  # 10-K, 10-Q
                 continue
