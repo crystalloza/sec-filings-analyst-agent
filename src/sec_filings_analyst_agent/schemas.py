@@ -31,6 +31,13 @@ class Figure(BaseModel):
         "Use change_amount or change_percent for differences you calculated, revenue_growth for "
         "year-over-year revenue growth, and other for anything else (segment figures, drivers, etc.)."
     )
+    scope: Literal["company_total", "segment_or_product", "non_gaap", "other"] = Field(
+        description="What the figure measures. company_total: a GAAP figure for the whole company. "
+        "segment_or_product: a business segment, product line, region or other part of the company "
+        "(for example Intelligent Cloud revenue or Azure growth). non_gaap: any adjusted or non-GAAP "
+        "measure. other: anything else (counts, dates, drivers). The concept field names the closest "
+        "concept either way."
+    )
     value: float = Field(
         description="The number exactly as stated in the unit and scale given below "
         "(for example 5.9 with scale 'billions', or 75.0 with unit 'percent')."

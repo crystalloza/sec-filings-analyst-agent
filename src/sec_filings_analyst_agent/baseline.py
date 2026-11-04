@@ -134,7 +134,8 @@ def describe(rec: dict) -> str:
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--mode", choices=["dev", "measured"], default="dev")
-    p.add_argument("--variant", choices=["A", "B", "both"], default="both")
+    p.add_argument("--variant", choices=["A", "B", "C", "both", "all"], default="both",
+                   help="A minimal, B careful, C closed-book (no documents); both = A+B; all = A+B+C")
     p.add_argument("--repeats", type=int, default=1)
     p.add_argument("--questions", type=Path, default=None)
     p.add_argument("--limit", type=int, default=None, help="only the first N questions")
@@ -150,7 +151,7 @@ def main() -> None:
         freeze_prompts()
         return
 
-    variants = ["A", "B"] if args.variant == "both" else [args.variant]
+    variants = {"both": ["A", "B"], "all": ["A", "B", "C"]}.get(args.variant, [args.variant])
     if args.mode == "measured":
         check_prompts_frozen(variants)
     questions = load_questions(args.questions or QUESTION_FILES[args.mode])
@@ -177,8 +178,11 @@ def main() -> None:
             context = load_context(con, q)
             documents_text = format_documents(context.documents)
             coverage = answer_in_docs(con, q, documents_text)
-            first_user = {"role": "user", "content": render_user_prompt(documents_text, q["question"])}
             for variant in variants:
+                closed_book = variant == "C"
+                first_user = {"role": "user", "content": render_user_prompt(documents_text, q["question"], variant)}
+                shown = type(context)([], context.notes) if closed_book else context   # C is shown no documents
+                cov = {"overall": None, "figures": [], "source": "closed_book"} if closed_book else coverage
                 for repeat in range(args.repeats):
                     if (q["id"], variant, repeat, 1) in done:
                         continue
@@ -187,7 +191,7 @@ def main() -> None:
                         print(f"Partial results in {out_path.relative_to(ROOT)}")
                         return
                     conv_id = str(uuid.uuid4()) if args.pressure else None
-                    rec1, raw1 = run_turn(q, variant, repeat, args.mode, context, coverage,
+                    rec1, raw1 = run_turn(q, variant, repeat, args.mode, shown, cov,
                                           [first_user], turn=1, conversation_id=conv_id)
                     out.write(json.dumps(rec1) + "\n"); out.flush()
                     spent += rec1["cost_usd"]; calls += 1; errors += rec1["error"] is not None
@@ -195,7 +199,7 @@ def main() -> None:
                     if args.pressure and raw1 is not None:
                         history = [first_user, {"role": "assistant", "content": raw1},
                                    {"role": "user", "content": q["pushback"]}]
-                        rec2, _ = run_turn(q, variant, repeat, args.mode, context, coverage,
+                        rec2, _ = run_turn(q, variant, repeat, args.mode, shown, cov,
                                            history, turn=2, conversation_id=conv_id, pushback=q["pushback"])
                         out.write(json.dumps(rec2) + "\n"); out.flush()
                         spent += rec2["cost_usd"]; calls += 1; errors += rec2["error"] is not None

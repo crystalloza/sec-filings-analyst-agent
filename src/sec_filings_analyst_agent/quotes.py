@@ -2,7 +2,8 @@
 
 VERIFIED tier: the quote is an exact substring of the documents the model was shown, after cleaning
 our own storage formatting (table pipes, bullets, heading markers) from both sides, and it holds at
-least three words of context besides numbers (a bare number proves nothing).
+least one word of context and three tokens (a bare number proves nothing, but a table row such as
+"Revenue $ 281,724 $ 245,122 15%" is a specific string no one could guess).
 NEAR tier (reported separately, never counted as verified): the words are about 90% similar to a
 passage in the source, but EVERY number in the quote appears exactly in that passage. That closes
 the loophole where a real sentence is quoted with one swapped number.
@@ -17,7 +18,8 @@ from difflib import SequenceMatcher
 
 from sec_filings_analyst_agent.text import normalize_text
 
-MIN_CONTEXT_WORDS = 3
+MIN_CONTEXT_WORDS = 1   # alphabetic words besides numbers
+MIN_TOKENS = 3
 NEAR_COVERAGE = 0.90
 _NUMBER_TOKEN = re.compile(r"^\$?\(?-?\d[\d,]*(\.\d+)?%?\)?$")
 
@@ -123,8 +125,8 @@ def check_quote(quote: str, source_canonical: str, source_tokens: list[str] | No
     if not quote or not quote.strip():
         return QuoteResult("empty", 0.0)
     q = canonicalize(quote)
-    if context_words(q) < MIN_CONTEXT_WORDS:
-        return QuoteResult("too_short", 0.0, "fewer than 3 words of context besides numbers")
+    if context_words(q) < MIN_CONTEXT_WORDS or len(q.split()) < MIN_TOKENS:
+        return QuoteResult("too_short", 0.0, "needs a label word and at least three tokens")
     if _verbatim_in_order(_fragments(q), source_canonical):
         return QuoteResult("verified", 1.0)
     tokens = source_tokens if source_tokens is not None else source_canonical.split()

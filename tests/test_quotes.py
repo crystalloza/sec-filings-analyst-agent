@@ -46,3 +46,11 @@ def test_quote_cut_in_the_middle_of_a_number_is_not_verified():
     assert check_quote("Research and development 5,87", SRC).status != "verified"
     assert check_quote("Research and development 5,872 5,00", SRC).status != "verified"
     assert check_quote("development 5,872 5,005 Client net revenue", SRC).status == "verified"   # starting at a word is fine
+
+
+def test_a_table_row_with_a_short_label_and_several_numbers_is_a_valid_quote():
+    row = "Research and development | 5,872 | 5,005"
+    assert check_quote(row, SRC).status == "verified"
+    assert check_quote("development 5,872 5,005", SRC).status == "verified"      # one label word, three tokens
+    assert check_quote("development 5,872", SRC).status == "too_short"           # label plus a single number: too thin
+    assert check_quote("5,872 5,005", SRC).status == "too_short"                 # numbers alone prove nothing

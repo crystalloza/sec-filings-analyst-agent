@@ -1,9 +1,10 @@
 {
-  "version": "baseline-v2",
-  "frozen_at": "2026-11-04T00:25:53.284607+00:00",
+  "version": "baseline-v3",
+  "frozen_at": "2026-11-04T00:46:42.806670+00:00",
   "hashes": {
-    "A": "c3c8b067fb7cbdb5",
-    "B": "f1be0c889066f807"
+    "A": "86510985dfa8c5c7",
+    "B": "63325f205c49cd0a",
+    "C": "df9f74eb21234929"
   },
   "config": {
     "models": {

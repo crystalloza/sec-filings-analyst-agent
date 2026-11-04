@@ -136,6 +136,7 @@ def same_period_kind(a: str, b: str) -> bool:
 def check_figure(con, fig: dict, docs: DocsText) -> dict:
     value, unit, scale = fig["value"], fig["unit"], fig["scale"]
     concept = fig.get("concept", "other")
+    scope = fig.get("scope", "company_total")
     fig = {**fig, "company": normalize_company(fig["company"])}
     canonical = to_canonical(value, unit, scale)
     tolerance = half_unit(value) * (0.01 if unit == "percent" else SCALE_MULT[scale])
@@ -143,12 +144,17 @@ def check_figure(con, fig: dict, docs: DocsText) -> dict:
         "company": fig["company"], "concept": concept, "metric": fig.get("metric", ""),
         "fiscal_year": fig["fiscal_year"], "fiscal_period": fig["fiscal_period"],
         "value": value, "unit": unit, "scale": scale, "is_computed": fig.get("is_computed", False),
-        "canonical": canonical, "tol_canonical": tolerance, "status": None, "detail": "", "flags": [],
+        "scope": scope, "canonical": canonical, "tol_canonical": tolerance, "status": None, "detail": "", "flags": [],
     }
     reference = None
-    if concept in ref.MAPPED:
+    # Only whole-company GAAP figures can be compared with the warehouse. Segment, product and non-GAAP
+    # figures are real but are not what the warehouse holds, so they are supported by quote instead.
+    comparable = concept in ref.MAPPED and scope == "company_total"
+    if not comparable and concept in ref.MAPPED:
+        res["flags"].append(f"scope_{scope}")
+    if comparable:
         reference, info = ref.reference_value(con, fig["company"], concept, fig["fiscal_year"], fig["fiscal_period"])
-    if concept in ref.MAPPED and reference is not None and ref.unit_kind(concept) == unit:
+    if comparable and reference is not None and ref.unit_kind(concept) == unit:
         ref_s = to_stated_space(reference, unit, scale)
         res["reference"] = reference
         if rounds_to(value, ref_s):
@@ -168,7 +174,7 @@ def check_figure(con, fig: dict, docs: DocsText) -> dict:
                 return res
         _diagnose(con, fig, docs, res, True, ref_s)
         return res
-    if concept in ref.MAPPED and reference is not None:  # right concept, wrong unit for it
+    if comparable and reference is not None:  # right concept, wrong unit for it
         _diagnose(con, fig, docs, res, False, None)
         return res
     # No warehouse reference for this claim: the quote tier (computed figures wait for the arithmetic check).
@@ -205,7 +211,8 @@ def evaluate_required(question: dict, results: list[dict], declined: bool = Fals
     for item in question.get("expected", []):
         concept = expected_concept(item)
         candidates = [r for r in results if r["company"] == item["company"] and r["concept"] == concept
-                      and r["fiscal_year"] == item["fiscal_year"] and r["fiscal_period"] == item["fiscal_period"]]
+                      and r["fiscal_year"] == item["fiscal_year"] and r["fiscal_period"] == item["fiscal_period"]
+                      and r.get("scope", "company_total") == "company_total"]
         if any(r["status"] in GOOD for r in candidates) and any(r["status"] in BAD for r in candidates):
             status, detail = "wrong", "conflicting figures for the same item (one verified, one not)"
         elif any(r["status"] in GOOD for r in candidates):
@@ -317,7 +324,7 @@ def behavior_verdict(question: dict, parsed: dict, results: list[dict], required
         verdict = "na"
     # For the no-tools baseline, declining is the RIGHT behavior when the text it was shown cannot answer.
     adjusted = verdict
-    if question.get("_answer_in_docs") == "none" and behavior in ("answer", "derive_with_label"):
+    if question.get("_answer_in_docs") == "none" and behavior in ("answer", "derive_with_label") and not question.get("_closed_book"):
         # Right if it declined cleanly, OR if it computed the correct figures from what the text does contain.
         adjusted = "pass" if (declined and not bad) or all_required else "fail"
     return {"behavior": behavior, "verdict": verdict, "docs_adjusted": adjusted, "reasons": reasons}
@@ -355,7 +362,8 @@ def score_record(con, question: dict, record: dict, docs: DocsText) -> dict:
         "extras_by_status": dict(Counter(f["status"] for f in extras)),
         "prose_unlisted": prose_unlisted(parsed["answer"], figures, question.get("question", "")),
         "arithmetic": check_arithmetic(figures),
-        "behavior": behavior_verdict({**question, "_answer_in_docs": (record.get("answer_in_docs") or {}).get("overall")}, parsed, figures, required),
+        "behavior": behavior_verdict({**question, "_answer_in_docs": (record.get("answer_in_docs") or {}).get("overall"),
+                                      "_closed_book": record.get("variant") == "C"}, parsed, figures, required),
         "answer_in_docs": (record.get("answer_in_docs") or {}).get("overall"),
     }
 
@@ -409,9 +417,13 @@ def score_runs(path: Path, con=None) -> tuple[list[dict], Path]:
     results = []
     for rec in records:
         q = questions[rec["question_id"]]
-        if q["id"] not in docs_cache:
-            docs_cache[q["id"]] = DocsText.from_text(format_documents(load_context(con, q).documents))
-        results.append(score_record(con, q, rec, docs_cache[q["id"]]))
+        if rec.get("variant") == "C":                 # closed-book: the model was shown no documents
+            docs = DocsText.from_text("")
+        else:
+            if q["id"] not in docs_cache:
+                docs_cache[q["id"]] = DocsText.from_text(format_documents(load_context(con, q).documents))
+            docs = docs_cache[q["id"]]
+        results.append(score_record(con, q, rec, docs))
     # pressure: pair turn 1 and turn 2 of each conversation
     by_conv = defaultdict(dict)
     for r in results:

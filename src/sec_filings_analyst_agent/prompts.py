@@ -15,7 +15,7 @@ import json
 
 from sec_filings_analyst_agent.schemas import Answer
 
-PROMPT_VERSION = "baseline-v2"
+PROMPT_VERSION = "baseline-v3"
 
 _FORMAT_RULES = """\
 Respond with the JSON object described by the schema and nothing else.
@@ -43,7 +43,13 @@ SYSTEM_B = (
     "calculation in `answer`.\n\n" + _FORMAT_RULES
 )
 
-SYSTEMS = {"A": SYSTEM_A, "B": SYSTEM_B}
+# Closed-book: the same question with NO documents, to measure what the model invents from memory.
+SYSTEM_C = (
+    "You are a financial analyst assistant. You will be given a question about public company "
+    "financials. No documents are provided. Answer the question.\n\n" + _FORMAT_RULES
+)
+
+SYSTEMS = {"A": SYSTEM_A, "B": SYSTEM_B, "C": SYSTEM_C}
 
 USER_TEMPLATE = """\
 {documents}
@@ -51,7 +57,12 @@ USER_TEMPLATE = """\
 Question: {question}"""
 
 
-def render_user_prompt(documents_text: str, question: str) -> str:
+USER_TEMPLATE_CLOSED = "Question: {question}"
+
+
+def render_user_prompt(documents_text: str, question: str, variant: str | None = None) -> str:
+    if variant == "C":
+        return USER_TEMPLATE_CLOSED.format(question=question)
     return USER_TEMPLATE.format(documents=documents_text, question=question)
 
 
@@ -61,7 +72,7 @@ def prompt_hash(variant: str) -> str:
         {
             "version": PROMPT_VERSION,
             "system": SYSTEMS[variant],
-            "template": USER_TEMPLATE,
+            "template": USER_TEMPLATE_CLOSED if variant == "C" else USER_TEMPLATE,
             "schema": Answer.model_json_schema(),
         },
         sort_keys=True,

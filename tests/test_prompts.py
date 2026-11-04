@@ -17,3 +17,11 @@ def test_variants_share_the_same_format_rules_and_differ_only_in_behavior_rules(
 def test_hashes_are_stable_and_distinct():
     assert prompt_hash("A") == prompt_hash("A")
     assert prompt_hash("A") != prompt_hash("B")
+
+
+def test_closed_book_variant_shows_no_documents():
+    from sec_filings_analyst_agent.prompts import render_user_prompt
+    prompt = render_user_prompt("<documents>SECRET FILING TEXT</documents>", "What was revenue?", "C")
+    assert "SECRET FILING TEXT" not in prompt and "What was revenue?" in prompt
+    assert prompt_hash("C") != prompt_hash("A") and "No documents are provided" in SYSTEMS["C"]
+    assert SYSTEMS["C"].endswith(SYSTEMS["A"][SYSTEMS["A"].index("Respond with the JSON object"):])

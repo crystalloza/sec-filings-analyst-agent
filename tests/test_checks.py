@@ -243,3 +243,31 @@ def test_baseline_computing_the_right_answer_from_the_text_also_passes_the_adjus
     required = [{"status": "correct"}]
     parsed = {"declined": False, "answer": "15.7%, computed from the statement.", "figures": []}
     assert behavior_verdict(q, parsed, [], required)["docs_adjusted"] == "pass"
+
+
+# ---- scope field and the closed-book variant -------------------------------------------------------
+def test_segment_figures_are_supported_by_quote_not_compared_with_the_company_total(con):
+    docs = DocsText.from_text("Intelligent Cloud segment revenue 105,362 87,907 20% in fiscal 2024")
+    quote = "Intelligent Cloud segment revenue 105,362 87,907 20%"
+    seg = fig(concept="revenue", scope="segment_or_product", value=105.362, source_quote=quote, company="AMD")
+    r = check_figure(con, seg, docs)
+    assert r["status"] == "verified_quote" and "scope_segment_or_product" in r["flags"]
+    assert check_figure(con, {**seg, "source_quote": ""}, docs)["status"] == "unsupported"   # not a "misread"
+
+
+def test_a_segment_figure_does_not_conflict_with_the_correct_company_total(con):
+    q = {"expected": [{"company": "AMD", "concept": "revenue", "fiscal_year": 2023, "fiscal_period": "FY"}]}
+    total = check_figure(con, fig(concept="revenue", value=22.68), DOCS)
+    segment = check_figure(con, fig(concept="revenue", scope="segment_or_product", value=9.0, source_quote="x"), DOCS)
+    assert evaluate_required(q, [total, segment])[0]["status"] == "correct"
+
+
+def test_a_wrong_company_total_is_still_caught_when_labelled_company_total(con):
+    r = check_figure(con, fig(concept="revenue", scope="company_total", value=30.0), DocsText.from_text("x"))
+    assert r["status"] in ("fabricated", "misread", "wrong_period")
+
+
+def test_closed_book_figures_are_checked_against_the_warehouse_with_no_documents(con):
+    empty = DocsText.from_text("")
+    assert check_figure(con, fig(), empty)["status"] == "verified_warehouse"            # recalled correctly
+    assert check_figure(con, fig(value=4.987), empty)["status"] == "fabricated"          # recalled wrongly
