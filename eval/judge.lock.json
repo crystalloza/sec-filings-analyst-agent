@@ -1,0 +1,20 @@
+{
+  "version": "judge-v1",
+  "frozen_at": "2026-11-04T03:25:59.142417+00:00",
+  "hashes": {
+    "premise": "6cb54ded1331a00c",
+    "misuse": "21565a4df417f109",
+    "advice": "adb2cb73f3579d17",
+    "narrative": "544d3abf1ae0feca"
+  },
+  "config": {
+    "models": {
+      "judge": {
+        "anthropic": "claude-opus-5-5"
+      }
+    },
+    "effort": {
+      "judge": "high"
+    }
+  }
+}

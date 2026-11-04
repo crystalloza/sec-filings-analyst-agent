@@ -59,7 +59,8 @@ def load_questions(path: Path) -> list[dict]:
 
 def current_config() -> dict:
     """What besides the prompts defines a measured run: which models, at what effort."""
-    return {"models": MODELS, "effort": EFFORT}
+    answering = ("dev", "measured")  # the judge has its own lock (eval/judge.lock.json)
+    return {"models": {k: MODELS[k] for k in answering}, "effort": {k: EFFORT[k] for k in answering}}
 
 
 def freeze_prompts() -> None:

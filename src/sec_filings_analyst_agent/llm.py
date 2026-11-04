@@ -25,11 +25,12 @@ load_dotenv()  # reads ANTHROPIC_API_KEY from the gitignored .env; never printed
 MODELS = {
     "dev": {"anthropic": "claude-haiku-5-5"},        # cheap, for prompt iteration
     "measured": {"anthropic": "claude-sonnet-5-5"},  # the model reported in results
+    "judge": {"anthropic": "claude-opus-5-5"},       # grades answers; a different tier from the answerer
 }
 
 # Reasoning effort per alias. These are the models' own defaults, written down so runs are reproducible
 # and the same setting can be reused for the agent.
-EFFORT = {"dev": "medium", "measured": "high"}
+EFFORT = {"dev": "medium", "measured": "high", "judge": "high"}
 
 # (input, output) USD per million tokens. Haiku's price rises for prompts over 100K tokens.
 PRICES = {
@@ -84,7 +85,7 @@ def complete(
     max_tokens: int = 16000,
     messages: Optional[list[dict]] = None,
 ) -> LLMResult:
-    """One model call that must return `output_model`. `alias` is 'dev' or 'measured'.
+    """One model call that must return `output_model`. `alias` is 'dev', 'measured' or 'judge'.
 
     Pass either `user` (a single user turn) or `messages` (a full conversation; the API is
     stateless, so a multi-turn exchange resends the whole history every call).

@@ -26,3 +26,6 @@ data/warehouse.duckdb*
 
 # Baseline dev runs are throwaway; measured runs (eval/runs/measured_*) are committed as evidence
 eval/runs/dev_*.jsonl
+
+# Judge dev runs are throwaway; judge runs on measured answers are committed as evidence
+eval/judge_runs/dev_*.jsonl
