@@ -142,10 +142,8 @@ def main() -> None:
         questions = questions[: args.limit]
 
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    tag = "pressure" if args.pressure else args.mode
-    out_path = RUNS_DIR / f"{args.mode}_{tag}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
-    if args.mode == "dev" and not args.pressure:
-        out_path = RUNS_DIR / f"dev_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
+    kind = f"{args.mode}_pressure" if args.pressure else args.mode
+    out_path = RUNS_DIR / f"{kind}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
     con = duckdb.connect(str(DB_PATH), read_only=True)
     spent, calls, errors = 0.0, 0, 0
     with out_path.open("a") as out:

@@ -12,9 +12,25 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
+# The fixed vocabulary the checks use to know what a figure claims to be (decision: model self-labels).
+Concept = Literal[
+    "revenue", "cost_of_revenue", "gross_profit", "operating_income", "net_income",
+    "research_and_development", "eps_diluted", "total_assets", "total_liabilities",
+    "stockholders_equity", "cash_and_equivalents", "inventory",
+    "gross_margin", "operating_margin", "net_margin", "rnd_pct_revenue", "revenue_growth",
+    "change_amount", "change_percent", "other",
+]
+
+
 class Figure(BaseModel):
     company: str = Field(description="Ticker of the company the figure belongs to, e.g. AMD.")
     metric: str = Field(description="What the figure is, e.g. 'research and development expense'.")
+    concept: Concept = Field(
+        description="The closest concept from the list. Margins and ratios are percentages (unit "
+        "percent): gross_margin is the PERCENTAGE, while gross profit in dollars is gross_profit. "
+        "Use change_amount or change_percent for differences you calculated, revenue_growth for "
+        "year-over-year revenue growth, and other for anything else (segment figures, drivers, etc.)."
+    )
     value: float = Field(
         description="The number exactly as stated in the unit and scale given below "
         "(for example 5.9 with scale 'billions', or 75.0 with unit 'percent')."
