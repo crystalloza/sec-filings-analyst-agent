@@ -111,6 +111,17 @@ def build_items(main_records: list[dict], pressure_records: list[dict], question
 TRIAL_QUOTA = {"premise": 6, "misuse": 4, "advice": 5, "narrative": 5}
 
 
+def items_from_key(path: Path) -> list[dict]:
+    """The labeled set (real answers + seeded failures) as judge items. Only the conversation, the reference
+    line and the document pointer are carried over; origin and seed details stay out of what the judge sees.
+    Real items keep their original item_id, so earlier judgments of them can be reused."""
+    key = json.loads(path.read_text())
+    return [{"item_id": k["item_id"], "criterion": k["criterion"], "source": k["origin"], "question_id": k["question_id"],
+             "variant": None if k["origin"] == "seed" else k["variant"], "conversation": k["conversation"],
+             "reference": k["reference"] if k["criterion"] in ("premise", "misuse") else None,
+             "documents_ref": k.get("documents_ref")} for k in key["items"]]
+
+
 def trial_sample(items: list[dict], questions: dict[str, dict], seed: int = 7) -> list[dict]:
     """A small mixed sample of REAL answers for reading the judge's reasoning before the prompts are frozen.
     Advice is drawn first from questions that invite advice, since most answers are plain lookups."""
@@ -315,6 +326,8 @@ def main() -> None:
     p.add_argument("--n", type=int, default=3, help="runs per judgment (majority vote)")
     p.add_argument("--max-cost", type=float, default=15.0)
     p.add_argument("--resume", type=Path, help="continue an interrupted judge file")
+    p.add_argument("--items", type=Path, help="judge the labeled set from a labeling key (real + seeded items)")
+    p.add_argument("--reuse", type=Path, help="with --items: copy existing judgments of the same item ids instead of re-running them")
     args = p.parse_args()
 
     if args.freeze:
@@ -336,12 +349,15 @@ def main() -> None:
     import duckdb
     from sec_filings_analyst_agent.build import DB_PATH
     from sec_filings_analyst_agent.docs import format_documents, load_context
-    if not args.runs:
+    if not args.runs and not args.items:
         sys.exit("--runs is required (a baseline runs file)")
     questions = {json.loads(l)["id"]: json.loads(l) for l in (EVAL_DIR / "questions.jsonl").read_text().splitlines() if l.strip()}
     reference = json.loads(CONTEXT_PATH.read_text())
     read = lambda path: [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
-    items = build_items(read(args.runs), read(args.pressure) if args.pressure else [], questions, reference)
+    if args.items:
+        items = items_from_key(args.items)
+    else:
+        items = build_items(read(args.runs), read(args.pressure) if args.pressure else [], questions, reference)
     con = duckdb.connect(str(DB_PATH), read_only=True)
     if args.trial:
         items = trial_sample(items, questions)
@@ -359,8 +375,18 @@ def main() -> None:
         return plan(items, args.n, docs_for)
     if not args.trial:
         check_frozen()
-    out = args.resume or JUDGE_RUNS / (f"dev_trial_{stamp}.jsonl" if args.trial else f"judge_{stamp}.jsonl")
+    out = args.resume or JUDGE_RUNS / (f"dev_trial_{stamp}.jsonl" if args.trial else f"judged_labeled_{stamp}.jsonl" if args.items else f"judge_{stamp}.jsonl")
     done = set()
+    if args.items and args.reuse and not args.resume:
+        wanted = {(i["item_id"], i["criterion"]) for i in items if i["source"] != "seed"}
+        with out.open("w") as f:
+            for r in read(args.reuse):
+                if r.get("parsed") and (r["item_id"], r["criterion"]) in wanted:
+                    f.write(json.dumps(r) + "\n")
+    if args.items and out.exists():
+        for r in read(out):
+            if r.get("parsed"):
+                done.add((r["item_id"], r["criterion"], r["run"]))
     if args.resume:
         for r in read(args.resume):
             if r.get("parsed"):

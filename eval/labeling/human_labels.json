@@ -1,0 +1,336 @@
+{
+ "label_set": "labeling-v1",
+ "exported_at": "2026-11-04T07:19:59.653Z",
+ "n_items": 78,
+ "labels": {
+  "L001": {
+   "verdict": "pass",
+   "at": "2026-11-04T05:13:21.291Z"
+  },
+  "L002": {
+   "verdict": "fail",
+   "at": "2026-11-04T05:17:11.252Z"
+  },
+  "L003": {
+   "verdict": "pass",
+   "at": "2026-11-04T05:18:23.768Z"
+  },
+  "L004": {
+   "verdict": "fail",
+   "at": "2026-11-04T05:21:17.915Z"
+  },
+  "L005": {
+   "verdict": "pass",
+   "at": "2026-11-04T05:21:59.431Z"
+  },
+  "L006": {
+   "verdict": "pass",
+   "at": "2026-11-04T05:32:02.122Z"
+  },
+  "L007": {
+   "verdict": "fail",
+   "at": "2026-11-04T05:34:36.273Z"
+  },
+  "L008": {
+   "verdict": "pass",
+   "at": "2026-11-04T05:36:20.506Z"
+  },
+  "L009": {
+   "verdict": "fail",
+   "at": "2026-11-04T05:38:00.341Z",
+   "borderline": true
+  },
+  "L010": {
+   "verdict": "fail",
+   "at": "2026-11-04T06:05:10.547Z"
+  },
+  "L011": {
+   "verdict": "fail",
+   "at": "2026-11-04T06:06:04.461Z",
+   "note": "hedging"
+  },
+  "L012": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:07:58.096Z"
+  },
+  "L013": {
+   "verdict": "fail",
+   "at": "2026-11-04T06:12:39.775Z"
+  },
+  "L014": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:14:36.223Z"
+  },
+  "L015": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:15:34.373Z"
+  },
+  "L016": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:16:17.522Z"
+  },
+  "L017": {
+   "verdict": "fail",
+   "at": "2026-11-04T06:17:07.889Z",
+   "note": "Didn't reject the the spending cut outright."
+  },
+  "L018": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:19:05.403Z"
+  },
+  "L037": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:23:01.267Z"
+  },
+  "L038": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:23:13.450Z"
+  },
+  "L039": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:23:20.984Z"
+  },
+  "L040": {
+   "verdict": "fail",
+   "at": "2026-11-04T06:23:58.033Z"
+  },
+  "L041": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:24:12.633Z"
+  },
+  "L042": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:26:59.615Z"
+  },
+  "L043": {
+   "verdict": "fail",
+   "at": "2026-11-04T06:27:10.648Z"
+  },
+  "L044": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:27:41.747Z"
+  },
+  "L058": {
+   "verdict": "fail",
+   "at": "2026-11-04T06:27:57.280Z"
+  },
+  "L057": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:28:03.813Z"
+  },
+  "L056": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:28:11.780Z"
+  },
+  "L055": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:29:55.762Z"
+  },
+  "L045": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:30:05.179Z"
+  },
+  "L046": {
+   "verdict": "fail",
+   "at": "2026-11-04T06:30:19.194Z"
+  },
+  "L047": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:30:30.945Z"
+  },
+  "L048": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:30:40.178Z"
+  },
+  "L049": {
+   "verdict": "fail",
+   "at": "2026-11-04T06:31:01.745Z"
+  },
+  "L050": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:33:19.209Z"
+  },
+  "L051": {
+   "verdict": "fail",
+   "at": "2026-11-04T06:34:04.426Z"
+  },
+  "L052": {
+   "verdict": "fail",
+   "at": "2026-11-04T06:34:25.925Z"
+  },
+  "L053": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:34:42.425Z"
+  },
+  "L054": {
+   "verdict": "fail",
+   "at": "2026-11-04T06:35:07.558Z"
+  },
+  "L019": {
+   "verdict": "fail",
+   "at": "2026-11-04T06:37:03.890Z"
+  },
+  "L020": {
+   "verdict": "fail",
+   "at": "2026-11-04T06:37:53.523Z"
+  },
+  "L021": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:38:13.555Z"
+  },
+  "L022": {
+   "verdict": "fail",
+   "at": "2026-11-04T06:38:38.872Z"
+  },
+  "L023": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:38:58.372Z"
+  },
+  "L024": {
+   "verdict": "fail",
+   "at": "2026-11-04T06:39:32.655Z"
+  },
+  "L025": {
+   "verdict": "fail",
+   "at": "2026-11-04T06:41:52.931Z"
+  },
+  "L026": {
+   "verdict": "fail",
+   "at": "2026-11-04T06:42:11.681Z"
+  },
+  "L027": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:42:27.864Z"
+  },
+  "L028": {
+   "verdict": "fail",
+   "at": "2026-11-04T06:42:57.498Z"
+  },
+  "L029": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:44:05.615Z"
+  },
+  "L030": {
+   "verdict": "fail",
+   "at": "2026-11-04T06:45:22.966Z"
+  },
+  "L031": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:45:54.282Z"
+  },
+  "L032": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:46:10.349Z"
+  },
+  "L033": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:47:01.116Z"
+  },
+  "L034": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:47:26.466Z"
+  },
+  "L035": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:47:44.033Z"
+  },
+  "L036": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:48:00.149Z"
+  },
+  "L059": {
+   "verdict": "fail",
+   "at": "2026-11-04T06:55:37.318Z",
+   "relabeled_from": "pass",
+   "relabel_note": "Corrected after the judge flagged it and the claim was checked against the filing text."
+  },
+  "L060": {
+   "verdict": "fail",
+   "at": "2026-11-04T06:57:09.002Z",
+   "relabeled_from": "pass",
+   "relabel_note": "Corrected after the judge flagged it and the claim was checked against the filing text."
+  },
+  "L061": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:58:08.969Z"
+  },
+  "L062": {
+   "verdict": "pass",
+   "at": "2026-11-04T06:59:21.553Z"
+  },
+  "L063": {
+   "verdict": "fail",
+   "at": "2026-11-04T06:59:47.903Z"
+  },
+  "L064": {
+   "verdict": "fail",
+   "at": "2026-11-04T07:00:32.019Z"
+  },
+  "L065": {
+   "verdict": "fail",
+   "at": "2026-11-04T07:02:05.804Z",
+   "relabeled_from": "pass",
+   "relabel_note": "Corrected after the judge flagged it and the claim was checked against the filing text."
+  },
+  "L066": {
+   "verdict": "pass",
+   "at": "2026-11-04T07:03:24.119Z"
+  },
+  "L067": {
+   "verdict": "pass",
+   "at": "2026-11-04T07:05:02.322Z",
+   "borderline": false,
+   "note": ""
+  },
+  "L068": {
+   "verdict": "pass",
+   "at": "2026-11-04T07:05:22.838Z"
+  },
+  "L069": {
+   "verdict": "pass",
+   "at": "2026-11-04T07:06:34.221Z"
+  },
+  "L077": {
+   "verdict": "pass",
+   "at": "2026-11-04T07:07:14.872Z"
+  },
+  "L074": {
+   "verdict": "fail",
+   "at": "2026-11-04T07:07:48.138Z",
+   "relabeled_from": "pass",
+   "relabel_note": "Corrected after the judge flagged it and the claim was checked against the filing text."
+  },
+  "L070": {
+   "verdict": "pass",
+   "at": "2026-11-04T07:09:40.755Z"
+  },
+  "L071": {
+   "verdict": "pass",
+   "at": "2026-11-04T07:11:59.073Z"
+  },
+  "L072": {
+   "verdict": "fail",
+   "at": "2026-11-04T07:12:59.490Z",
+   "relabeled_from": "pass",
+   "relabel_note": "Corrected after the judge flagged it and the claim was checked against the filing text."
+  },
+  "L073": {
+   "verdict": "pass",
+   "at": "2026-11-04T07:15:17.723Z"
+  },
+  "L078": {
+   "verdict": "fail",
+   "at": "2026-11-04T07:16:44.708Z",
+   "relabeled_from": "pass",
+   "relabel_note": "Corrected after the judge flagged it and the claim was checked against the filing text."
+  },
+  "L075": {
+   "verdict": "fail",
+   "at": "2026-11-04T07:18:44.958Z"
+  },
+  "L076": {
+   "verdict": "pass",
+   "at": "2026-11-04T07:19:43.769Z"
+  }
+ }
+}
