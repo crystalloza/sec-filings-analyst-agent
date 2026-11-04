@@ -88,7 +88,9 @@ def load_context(con: duckdb.DuckDBPyConnection, question: dict) -> Context:
     realistic documents and must decide for itself that the answer is not there.
     """
     sections = question.get("sections", DEFAULT_SECTIONS)
-    years = sorted({p["fiscal_year"] for p in question["expected_periods"]})
+    # `context_periods` overrides which filings are shown, for periods that have no 10-K of their own
+    # (a quarter asked about is answered from the company's latest annual report, which cannot contain it).
+    years = sorted({p["fiscal_year"] for p in question.get("context_periods", question["expected_periods"])})
     answerable = question.get("answerable", True)
     docs, notes = [], []
     for ticker in question["companies"]:

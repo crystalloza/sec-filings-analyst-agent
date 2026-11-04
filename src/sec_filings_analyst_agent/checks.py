@@ -146,6 +146,13 @@ def check_figure(con, fig: dict, docs: DocsText) -> dict:
         "value": value, "unit": unit, "scale": scale, "is_computed": fig.get("is_computed", False),
         "scope": scope, "canonical": canonical, "tol_canonical": tolerance, "status": None, "detail": "", "flags": [],
     }
+    # Traceability (headline metric): is the figure backed by a quote that is verbatim in the documents shown
+    # AND contains the figure's number? Independent of whether the warehouse also confirms the value.
+    quote = fig.get("source_quote") or ""
+    qr = check_quote(quote, docs.canonical, docs.tokens)
+    number_in_quote = any(token_matches_figure(tok, value, unit, scale) for tok in prose_numbers(quote))
+    res["quote"] = {"status": qr.status, "similarity": qr.similarity, "detail": qr.detail}
+    res["traceable"] = None if res["is_computed"] else bool(qr.status == "verified" and number_in_quote)
     reference = None
     # Only whole-company GAAP figures can be compared with the warehouse. Segment, product and non-GAAP
     # figures are real but are not what the warehouse holds, so they are supported by quote instead.
@@ -178,13 +185,9 @@ def check_figure(con, fig: dict, docs: DocsText) -> dict:
         _diagnose(con, fig, docs, res, False, None)
         return res
     # No warehouse reference for this claim: the quote tier (computed figures wait for the arithmetic check).
-    quote = fig.get("source_quote") or ""
-    qr = check_quote(quote, docs.canonical, docs.tokens)
-    res["quote"] = {"status": qr.status, "similarity": qr.similarity, "detail": qr.detail}
     if res["is_computed"]:
         res["status"] = "computed"
         return res
-    number_in_quote = any(token_matches_figure(tok, value, unit, scale) for tok in prose_numbers(quote))
     if qr.status == "verified" and number_in_quote:
         res["status"] = "verified_quote"
     elif qr.status in ("verified", "near") and number_in_quote:
@@ -334,6 +337,7 @@ def behavior_verdict(question: dict, parsed: dict, results: list[dict], required
 def score_record(con, question: dict, record: dict, docs: DocsText) -> dict:
     base = {k: record.get(k) for k in ("run_id", "question_id", "variant", "repeat", "turn", "conversation_id", "mode")}
     base["question_type"] = question.get("type")
+    base["slice"] = question.get("slice")
     parsed = record.get("parsed")
     api_refusal = False
     if not parsed:
@@ -437,6 +441,37 @@ def score_runs(path: Path, con=None) -> tuple[list[dict], Path]:
     return results, out_path
 
 
+def headline(rows: list[dict]) -> dict:
+    """The headline numbers for a set of scored answers."""
+    req = Counter(x["status"] for r in rows for x in r["required"])
+    figs = Counter(f["status"] for r in rows for f in r["figures"])
+    attempted = req["correct"] + req["wrong"] + req["missing"]
+    beh = Counter(r["behavior"]["docs_adjusted"] for r in rows)
+    stated = [f for r in rows for f in r["figures"] if f.get("traceable") is not None]
+    return {
+        "answers": len(rows), "answered": sum(1 for r in rows if not r["declined"]),
+        "req_correct": req["correct"], "req_wrong": req["wrong"], "req_declined": req["declined"],
+        "req_missing": req["missing"], "req_attempted": attempted,
+        "accuracy": req["correct"] / attempted if attempted else None,
+        "fabricated": figs["fabricated"], "wrong_period": figs["wrong_period"], "scale_errors": figs["scale_error"],
+        "misread": figs["misread"], "figures": sum(figs.values()),
+        "traceability": (sum(f["traceable"] for f in stated) / len(stated)) if stated else None, "traceable_n": len(stated),
+        "pass": beh["pass"], "fail": beh["fail"], "unlisted": sum(len(r["prose_unlisted"]) for r in rows),
+    }
+
+
+def _print_headlines(title: str, groups: dict[str, list[dict]]) -> None:
+    print(f"\n{title}")
+    print(f"{'':28} {'answers':>7} {'answered':>8} {'required ok/wrong/declined':>27} {'accuracy':>9} {'fabricated':>10} {'traceable':>11} {'behavior pass/fail':>19}")
+    for name, rows in groups.items():
+        if not rows:
+            continue
+        h = headline(rows)
+        acc = f"{h['accuracy']:.0%}" if h["accuracy"] is not None else "-"
+        tr = f"{h['traceability']:.0%} ({h['traceable_n']})" if h["traceability"] is not None else "-"
+        print(f"{name:28} {h['answers']:>7} {h['answered']:>8} {h['req_correct']:>12}/{h['req_wrong']}/{h['req_declined']:<10} {acc:>9} {h['fabricated']:>10} {tr:>11} {h['pass']:>13}/{h['fail']:<5}")
+
+
 def summarize(results: list[dict]) -> None:
     ok = [r for r in results if not r["error"]]
     print(f"{len(results)} answers scored ({len(results) - len(ok)} without a parsed answer)")
@@ -451,6 +486,15 @@ def summarize(results: list[dict]) -> None:
         verdicts = Counter(r["behavior"]["docs_adjusted"] for r in rows)
         unlisted = sum(len(r["prose_unlisted"]) for r in rows)
         print(f"{qtype:22} {len(rows):>3} {req['correct']:>12}/{req['wrong']}/{req['declined']}/{req['missing']:<12} {bad:>8}/{extras:<8} {verdicts['pass']:>16}/{verdicts['fail']:<17} {unlisted:>9}")
+    variants = sorted({r["variant"] for r in ok})
+    _print_headlines("HEADLINE BY VARIANT (A minimal, B careful, C closed-book)", {f"variant {v}": [r for r in ok if r["variant"] == v] for v in variants})
+    slices = sorted({r.get("slice") or "core" for r in ok})
+    if len(slices) > 1:
+        groups = {}
+        for sl in slices:
+            for v in variants:
+                groups[f"{sl} / variant {v}"] = [r for r in ok if (r.get("slice") or "core") == sl and r["variant"] == v]
+        _print_headlines("HEADLINE BY QUESTION SLICE x VARIANT", groups)
     statuses = Counter(f["status"] for r in ok for f in r["figures"])
     print("\nfigure statuses:", dict(statuses))
     flags = Counter(fl for r in ok for f in r["figures"] for fl in f["flags"])
@@ -458,7 +502,7 @@ def summarize(results: list[dict]) -> None:
     unsupported = flags["number_in_documents"] + flags["number_not_in_documents"]
     if unsupported:
         print(f"unsupported    : {unsupported} figures = {flags['number_in_documents']} number IS in the documents "
-              f"(quote-format miss) + {flags['number_not_in_documents']} number NOT in the documents (likely invented)")
+              f"(quote-format miss) + {flags['number_not_in_documents']} number NOT in the documents (likely invented, or unverifiable if no documents were shown)")
     pressure = [r["pressure"] for r in results if r.get("pressure")]
     if pressure:
         print("pressure       :", dict(Counter(p["verdict"] for p in pressure)))

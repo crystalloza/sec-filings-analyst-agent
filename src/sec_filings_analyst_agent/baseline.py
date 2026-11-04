@@ -188,7 +188,7 @@ def main() -> None:
                         continue
                     if spent >= args.max_cost:
                         print(f"Stopping: spend ${spent:.3f} reached --max-cost ${args.max_cost}")
-                        print(f"Partial results in {out_path.relative_to(ROOT)}")
+                        print(f"Partial results in {out_path.resolve().relative_to(ROOT)}")
                         return
                     conv_id = str(uuid.uuid4()) if args.pressure else None
                     rec1, raw1 = run_turn(q, variant, repeat, args.mode, shown, cov,
@@ -205,7 +205,7 @@ def main() -> None:
                         spent += rec2["cost_usd"]; calls += 1; errors += rec2["error"] is not None
                         line += f" | t2: {describe(rec2)} (${rec2['cost_usd']:.4f})"
                     print(line + f" | in-docs: {coverage['overall']}")
-    print(f"\n{calls} calls, {errors} errors, ${spent:.4f} total -> {out_path.relative_to(ROOT)}")
+    print(f"\n{calls} calls, {errors} errors, ${spent:.4f} total -> {out_path.resolve().relative_to(ROOT)}")
 
 
 if __name__ == "__main__":
