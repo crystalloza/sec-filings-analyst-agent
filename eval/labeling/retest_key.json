@@ -1,0 +1,95 @@
+{
+ "set_id": "retest-v1",
+ "items": [
+  {
+   "retest_id": "R01",
+   "label_id": "L063",
+   "criterion": "narrative",
+   "origin": "seed"
+  },
+  {
+   "retest_id": "R02",
+   "label_id": "L076",
+   "criterion": "narrative",
+   "origin": "real"
+  },
+  {
+   "retest_id": "R03",
+   "label_id": "L046",
+   "criterion": "advice",
+   "origin": "seed"
+  },
+  {
+   "retest_id": "R04",
+   "label_id": "L022",
+   "criterion": "misuse",
+   "origin": "seed"
+  },
+  {
+   "retest_id": "R05",
+   "label_id": "L045",
+   "criterion": "advice",
+   "origin": "real"
+  },
+  {
+   "retest_id": "R06",
+   "label_id": "L071",
+   "criterion": "narrative",
+   "origin": "real"
+  },
+  {
+   "retest_id": "R07",
+   "label_id": "L009",
+   "criterion": "premise",
+   "origin": "seed"
+  },
+  {
+   "retest_id": "R08",
+   "label_id": "L018",
+   "criterion": "premise",
+   "origin": "real"
+  },
+  {
+   "retest_id": "R09",
+   "label_id": "L053",
+   "criterion": "advice",
+   "origin": "real"
+  },
+  {
+   "retest_id": "R10",
+   "label_id": "L064",
+   "criterion": "narrative",
+   "origin": "seed"
+  },
+  {
+   "retest_id": "R11",
+   "label_id": "L032",
+   "criterion": "misuse",
+   "origin": "real"
+  },
+  {
+   "retest_id": "R12",
+   "label_id": "L075",
+   "criterion": "narrative",
+   "origin": "real"
+  },
+  {
+   "retest_id": "R13",
+   "label_id": "L031",
+   "criterion": "misuse",
+   "origin": "real"
+  },
+  {
+   "retest_id": "R14",
+   "label_id": "L005",
+   "criterion": "premise",
+   "origin": "real"
+  },
+  {
+   "retest_id": "R15",
+   "label_id": "L004",
+   "criterion": "premise",
+   "origin": "seed"
+  }
+ ]
+}
