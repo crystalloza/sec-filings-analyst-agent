@@ -2,6 +2,8 @@
 
 An AI agent that performs financial analysis on public company filings from the SEC's EDGAR database, with an evaluation harness to measure the accuracy and reliability of its analysis.
 
+**The point:** a plain frontier model already handles public filings well, so I built the careful version around it: structured data tools, answers you can check against a source, and a judge I validated against my own labels. Public filings are the practice ground because every answer can be verified. The same design could be applied to internal, confidential data a public model can't see.
+
 > 🚧 Work in progress
 
 ## Overview
@@ -101,7 +103,7 @@ On the 11 **freshness** questions, closed-book answered none (it declined all), 
 
 ### What the results mean
 - **Fabrication is not what separates systems here.** A frontier model recalls mega-cap financials accurately and declines when unsure; with the right filing in front of it, it did not fabricate a single figure. The original hypothesis (a text-only baseline invents numbers) was **not supported** for this model and these companies.
-- **What does separate them is traceability, coverage and freshness.** Closed-book figures cannot be checked by a reader (0% traceable). Document-based baselines cannot answer anything outside the text they were given: 13% of required figures in the core set, and 8 of the 9 answerable freshness figures. A system with structured data and tools can.
+- **What does separate them is traceability and coverage.** Closed-book figures cannot be checked by a reader (0% traceable). Document-based baselines cannot answer anything outside the text they were given: 13% of required figures in the core set, and 8 of the 9 answerable freshness figures. A system with structured data and tools can. Freshness is not a lasting edge: it only reflects how recently I pulled the data, and I haven't built a refresh job.
 - **Calibration is good.** Unanswerable questions were declined, false premises were corrected, and the model held its position under scripted pushback in every case tested. The one closed-book failure was agreeing with a user's false number (55%) when nothing anchored the answer.
 
 ### The LLM judge
