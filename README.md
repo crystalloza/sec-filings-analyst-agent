@@ -11,7 +11,7 @@ Finance teams spend a lot of time pulling numbers out of 10-Ks and double-checki
 
 It covers NVIDIA, AMD, Intel and Microsoft from FY2018 on, using SEC EDGAR filings. I built the tests before the agent. That way I know what a plain model already gets right, and what an agent really needs to fix.
 
-**Where it stands:** the data pipeline, the no-tools baseline, the automatic checks and the LLM judge are built. The judge has been checked against my own hand labels. The agent itself isn't built yet.
+**Where it stands:** the data pipeline, the no-tools baseline, the automatic checks and the LLM judge are built. The judge has been checked against my own hand labels. The two tool servers the agent will use (numbers and filing text) are built and tested. The agent loop itself isn't built yet.
 
 Here is a real answer from the baseline (a model given the filing and nothing else). The user pushed back after the model had already corrected a false 55%:
 
@@ -21,7 +21,7 @@ Here is a real answer from the baseline (a model given the filing and nothing el
 ## How it works
 ```
 EDGAR financial data ──► raw ──► clean ──► metrics ──┐
-EDGAR 10-K documents ──► filing text ────────────────┴──► agent tools (planned)
+EDGAR 10-K documents ──► filing text ────────────────┴──► agent tools (MCP servers)
 ```
 Everything lives in one DuckDB file that I can delete and rebuild from the SQL.
 
@@ -35,7 +35,11 @@ Three rules run through all of it:
 2. **Refuse instead of guess.** If the data isn't there, the answer is "I don't have that."
 3. **Code checks facts, a judge checks language.** Numbers are verified against the SEC data in code. The LLM judge only scores what code can't, like whether a false claim was corrected. The judge itself is validated against hand labels.
 
-**The agent (planned):** a model that can call two small MCP servers, one for the numbers and one for the filing text. The tools take set parameters like ticker and period, never raw SQL. It is tested on the same questions, checks and judge as the baseline, so the comparison is fair.
+**The agent (in progress):** a model that calls two small MCP servers. Both are built; the loop that drives them is next. The tools take set parameters like ticker and period, never raw SQL.
+- **`sec-facts`** (numbers): every value comes back as a record with a readable id like `NVDA:revenue:FY2025:FY:10-K`, a link to the filing on EDGAR, and flags for derived or restated values (with the original value and why it changed). Missing data comes back empty with a reason.
+- **`sec-filings`** (text): search by meaning over the 10-K paragraphs, using a small embedding model that runs on the laptop, so the text never leaves the machine.
+
+It will be tested on the same questions, checks and judge as the baseline, so the comparison is fair. The design decisions are in [`docs/agent_design.md`](docs/agent_design.md).
 
 How the testing works, and what it found, is in the Evaluation section below.
 
@@ -148,9 +152,10 @@ uv run python -m sec_filings_analyst_agent.flatten
 uv run python -m sec_filings_analyst_agent.fetch_filings
 uv run python -m sec_filings_analyst_agent.parse_filings
 uv run python -m sec_filings_analyst_agent.build
+uv run python -m sec_filings_analyst_agent.filing_search --build   # local embeddings for text search, ~5 min
 uv run pytest
 ```
-Some tests compare against the warehouse, so run them after the build.
+Some tests compare against the warehouse and the search index, so run them after the build. The two tool servers run with `uv run python -m sec_filings_analyst_agent.mcp_facts` and `...mcp_filings`.
 
 **Run the evaluation** (these cost real money):
 ```bash
