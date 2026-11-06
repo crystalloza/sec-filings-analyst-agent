@@ -48,11 +48,11 @@ _Every number in the system is either **reported** (taken from a filing as filed
 - Periods are labelled with each company's **own** fiscal calendar (`fiscal_year`, `fiscal_period`). Cross-company comparisons can therefore span up to ~11 months (for example NVIDIA's FY ends in January, AMD's in December).
 
 ### Derived values
-| Derived value | Rule | Where it is flagged | Not available for |
-|---|---|---|---|
-| **Fourth quarter (Q4)** | Fiscal-year total minus the 9-month year-to-date figure, for the same fiscal year. Never overwrites a reported Q4 | `clean_facts.is_derived = TRUE`; `derivation` holds the recipe and both source accession numbers | Diluted EPS (share counts differ, so subtraction is not meaningful), and any year missing either input |
-| **Total liabilities** _(planned, derive on request)_ | Liabilities-and-equity minus stockholders' equity **including noncontrolling interest** | Will be labelled derived with the calculation shown | Intel before 2021-12 (equity including noncontrolling interest not reported); AMD and Intel do not report a liabilities total |
-| **Ratios and growth** _(metrics table, in progress)_ | See below | `metrics` table | Periods with a missing or flagged input |
+- **Fourth quarter (Q4):** fiscal-year total minus the 9-month figure. It never overwrites a reported Q4, and it isn't available for diluted EPS (share counts differ) or any year missing an input.
+- **Total liabilities:** AMD and Intel don't report it, so it is liabilities-and-equity minus equity including noncontrolling interest (parent equity where there is none). It is labelled derived. Where Intel's equity including noncontrolling interest isn't available (FY2018 and the quarters before 2022), it is refused, not guessed.
+- **Ratios and growth:** see below.
+
+Derived rows are flagged `is_derived` with the recipe and source filings.
 
 **Why Q4 is derived:** companies do not file a fourth quarter on its own; the 10-K covers the whole year. Stand-alone Q4 facts exist only through FY2020 for AMD, Microsoft and NVIDIA (and never for Intel), because 10-Ks used to include a quarterly-results table that is no longer required. After FY2020, Q4 is therefore available only as a derived value.
 

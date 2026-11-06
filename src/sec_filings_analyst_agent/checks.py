@@ -366,7 +366,8 @@ def score_record(con, question: dict, record: dict, docs: DocsText) -> dict:
         "extras_by_status": dict(Counter(f["status"] for f in extras)),
         "prose_unlisted": prose_unlisted(parsed["answer"], figures, question.get("question", "")),
         "arithmetic": check_arithmetic(figures),
-        "behavior": behavior_verdict({**question, "_answer_in_docs": (record.get("answer_in_docs") or {}).get("overall"),
+        "behavior": behavior_verdict({**question, "_answer_in_docs": (record.get("answer_in_docs") or {}).get("overall")
+                                      or question.get("answer_in_docs"),   # the question's own hand-set annotation, if the run predates it
                                       "_closed_book": record.get("variant") == "C"}, parsed, figures, required),
         "answer_in_docs": (record.get("answer_in_docs") or {}).get("overall"),
     }

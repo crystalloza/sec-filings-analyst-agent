@@ -17,7 +17,7 @@ The same design could be applied to internal, confidential data a public model c
 | `sec-facts` | `get_concept`, `compare_companies`, `get_metrics`, `list_available_periods` |
 | `sec-filings` | `search_filing`, `get_paragraph` |
 
-- **Fact record:** value, unit, scale; fiscal period labels and dates; a record id; the source filing number and an EDGAR URL; flags for derived (with the recipe), restated and fallback tag. Missing data comes back empty with a reason, never a guess.
+- **Fact record:** value, unit, scale; fiscal period labels and dates; a record id; the source filing number and an EDGAR URL; flags for derived (with the recipe), restated, tag disagreement and year-to-date. The XBRL tag used is a plain field, not a flag, since about 10% of rows use a fallback tag and it isn't a caveat. Missing data comes back empty with a reason, never a guess.
 - **Text search:** local open-source embeddings over the 10-K paragraphs (Items 1, 1A, 7), embedded once and stored so retrieval is repeatable. No extra API key.
 
 ## Loop
