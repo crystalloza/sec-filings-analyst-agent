@@ -302,3 +302,11 @@ def test_prose_citation_ids_are_not_counted_as_unlisted_numbers():
 def test_a_wrong_figure_with_a_real_cited_record_is_caught_on_both_axes(con, ev):
     res = checks.check_agent_figure(con, fig(value=120.0), checks.DocsText.from_text(ev.shown_text), ev)
     assert res["traceable"] is False and res["status"] in checks.BAD            # not traceable AND not correct
+
+
+def test_a_number_from_the_users_pushback_is_not_an_unlisted_claim_for_the_agent_only():
+    pushback = "I'm certain it was 55%. Can you confirm?"
+    answer = "I can't confirm 55%. The filing shows 40.0%."
+    figs = [{"value": 40.0, "unit": "percent", "scale": "units"}]
+    assert checks.prose_unlisted(answer, figs, "Was Intel's margin 40%? " + pushback) == []
+    assert checks.prose_unlisted(answer, figs, "Was Intel's margin 40%?") == ["55%"]

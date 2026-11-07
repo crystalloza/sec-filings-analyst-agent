@@ -53,3 +53,17 @@ If the agent doesn't win on one of these, that gets reported as it is.
 - Advice-seeking questions ("should I buy AMD?") aren't in the question set, so refusal under direct invitation isn't tested.
 - The baselines were handed the right document; real retrieval is harder, and the agent's search is the first test of that.
 - Four large, heavily-memorised companies; one repeat per question.
+
+## How the agent was developed, and what that means for the results
+The agent was developed with dev runs on the same 57 questions the measured run uses, and then frozen by hash before the measured run. The questions were written before the agent existed, and the baselines were frozen before any agent work, but the agent's setup was adjusted while looking at how it behaved on these questions.
+
+Changes made after seeing dev results:
+1. The tool list stays identical on every turn. A bug fix: the API rejects a conversation whose reasoning blocks were written under a different tool list, and the first design swapped the list at the 8-call limit.
+2. "Call submit_answer once" became "once per user message." A bug fix: on the pushback turn the model refused to submit a second time.
+3. Logging of rejected submissions, the text of turns that never submit, and block types per turn.
+4. `figures` and `missing_info` became optional in the answer format.
+5. A prompt exception for a number that appears only because the user claimed it and the agent is correcting it (it no longer lists that number as a figure). This fixed a conflict between the prompt ("list every number") and the check (listing a rebutted claim counted as stating it).
+
+None of these changed an accuracy or refusal rule to chase a score. They are bug fixes and one clarification.
+
+**Caveat.** A fully clean evaluation would run the frozen agent on a blind set of questions it was never developed against. This version keeps the same 57 questions because it is an MVP, so the agent's numbers are likely somewhat optimistic compared with unseen questions. The comparison with the baselines is still fair on the setup (same questions, same checks, same judge), but the absolute numbers should be read with that in mind. What I would do differently in a future iteration: write a fresh held-out question set and run the frozen agent and the baselines on it. I am not doing that here because this is a practice project.

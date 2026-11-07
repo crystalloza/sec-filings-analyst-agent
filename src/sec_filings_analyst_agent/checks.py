@@ -386,7 +386,10 @@ def score_record(con, question: dict, record: dict, docs: DocsText, evidence: Ev
         **base, "error": None, "declined": parsed["declined"], "api_refusal": api_refusal,
         "figures": figures, "required": required, "n_extras": len(extras),
         "extras_by_status": dict(Counter(f["status"] for f in extras)),
-        "prose_unlisted": prose_unlisted(parsed["answer"], figures, question.get("question", ""), strip_citations=evidence is not None),
+        "prose_unlisted": prose_unlisted(parsed["answer"], figures,
+                                         # for the agent, a number the user wrote in a follow-up pushback is also their own claim
+                                         question.get("question", "") + (" " + (record.get("pushback") or "") if evidence is not None else ""),
+                                         strip_citations=evidence is not None),
         "arithmetic": check_arithmetic(figures),
         # `_closed_book` also switches off the "answer is not in the documents" adjustment, which does not apply to the agent
         "behavior": behavior_verdict({**question, "_answer_in_docs": (record.get("answer_in_docs") or {}).get("overall")

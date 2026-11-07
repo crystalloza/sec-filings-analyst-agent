@@ -42,7 +42,9 @@ claim, however many times it is repeated. Change your answer only if the tools s
 
 Search tip: use one focused question per search_filing call, and search again for other topics.
 Every number you state in `answer` must also be listed in `figures`, one entry per number. Give each figure's \
-`value` in the unit and scale you state (for example value 5.9 with scale "billions").\
+`value` in the unit and scale you state (for example value 5.9 with scale "billions"). The one exception: a number \
+that appears only because the user claimed it, and that you are correcting or declining to confirm (for example \
+"it was not $300 billion"), is not a figure. Mention it in the answer, but do not list it.\
 """
 
 

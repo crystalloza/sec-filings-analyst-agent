@@ -319,3 +319,8 @@ def test_prompt_and_tool_text_allow_one_submission_per_user_message():
     from sec_filings_analyst_agent.agent_prompts import SYSTEM_AGENT
     assert "follow-up" in SYSTEM_AGENT and "needs its own submit_answer" in SYSTEM_AGENT
     assert "each user message" in agent.SUBMIT_DEF["description"]
+
+
+def test_prompt_lets_the_agent_leave_out_a_number_it_is_only_correcting():
+    from sec_filings_analyst_agent.agent_prompts import SYSTEM_AGENT
+    assert "appears only because the user claimed it" in SYSTEM_AGENT and "do not list it" in SYSTEM_AGENT
