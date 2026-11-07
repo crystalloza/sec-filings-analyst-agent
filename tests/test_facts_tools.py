@@ -173,3 +173,57 @@ def test_mcp_tool_text_lists_exactly_the_real_concepts():
     doc = inspect.getdoc(mcp_facts.get_concept)
     for c in f.REPORTED:
         assert c in doc
+
+
+# ----------------------------------------------------------------------------- gaps found by the coverage report
+def test_prior_period_rules():
+    assert f._prior(2025, "Q1", "qoq") == (2024, "Q4")        # Q1 compares with the previous fiscal year's Q4
+    assert f._prior(2025, "Q3", "qoq") == (2025, "Q2")
+    assert f._prior(2025, "FY", "qoq") is None
+    assert f._prior(2025, "Q2", "yoy") == (2024, "Q2")
+
+
+def test_qoq_metric_cites_the_prior_quarter_records(con):
+    out = f.get_metrics("NVDA", 2025, "Q1", ["revenue_qoq_growth"], con=con)
+    rec = out["records"][0]
+    ids = [i["id"] for i in rec["computed_from"]]
+    assert rec["value"] is not None and len(ids) == 2
+    assert ids[0].startswith("NVDA:revenue:FY2025:Q1:") and ids[1].startswith("NVDA:revenue:FY2024:Q4:")
+
+
+def test_tools_work_without_a_supplied_connection():
+    """The MCP servers call the tools this way: each call opens and closes its own connection."""
+    assert f.get_concept("NVDA", "revenue", [{"fiscal_year": 2025, "fiscal_period": "FY"}])["records"][0]["value"] == 130_497_000_000
+    assert f.compare_companies(["NVDA", "AMD"], "revenue", 2025)["records"][0]["id"]
+    assert f.get_metrics("NVDA", 2025, "FY", ["gross_margin"])["records"][0]["display"] == "75.0%"
+    assert f.list_available_periods("NVDA", "revenue")["years"]
+
+
+def test_tag_disagreement_is_flagged(con):
+    row = con.execute("SELECT * FROM clean_facts WHERE role = 'reported' AND NOT is_derived LIMIT 1")
+    d = dict(zip([c[0] for c in row.description], row.fetchone()))
+    assert "tag_disagreement" not in f._row_to_record(con, d)["flags"]
+    assert "tag_disagreement" in f._row_to_record(con, {**d, "has_tag_disagreement": True})["flags"]
+
+
+def test_metrics_and_periods_reject_bad_inputs_and_report_empty_results(con):
+    assert "error" in f.get_metrics("TSLA", 2025, "FY", con=con)
+    assert "error" in f.get_metrics("NVDA", 2025, "Q9", con=con)
+    out = f.get_metrics("NVDA", 2025, "FY", ["no_such_metric"], con=con)
+    assert out["records"] == [] and out["missing_reason"]
+    assert "error" in f.list_available_periods("TSLA", "revenue", con=con)
+    assert "error" in f.list_available_periods("NVDA", "ebitda", con=con)
+
+
+def test_periods_for_a_concept_a_company_does_not_report_says_so_and_mentions_derivation(con):
+    out = f.list_available_periods("AMD", "total_liabilities", con=con)
+    assert out["years"] == [] and out["missing_reason"] and "DERIVED" in out["note"]
+
+
+def test_display_formats():
+    assert f.display(None, "USD", "revenue") is None
+    assert f.display(750_000, "USD", "revenue") == "$750,000"
+    assert f.display(1_500_000, "USD", "revenue") == "$1.500 million"
+    assert f.display(2.94, "USD/shares", "eps_diluted") == "$2.94 per share"
+    assert f.display(0.7499, "ratio", "gross_margin") == "75.0%"
+    assert f.display(-0.052, "ratio", "revenue_yoy_growth") == "-5.2%"

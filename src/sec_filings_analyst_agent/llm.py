@@ -62,6 +62,13 @@ class LLMResult:
 
 
 @lru_cache(maxsize=None)
+def make_async_client(provider: str):
+    if provider != "anthropic":
+        raise NotImplementedError(f"provider {provider!r} is not implemented")
+    return anthropic.AsyncAnthropic(timeout=300.0, max_retries=3)
+
+
+@lru_cache(maxsize=None)
 def make_client(provider: str):
     if provider == "anthropic":
         # A hung connection must fail (and be retried) instead of blocking a worker thread forever.
@@ -128,3 +135,41 @@ def complete(
         latency_s=round(latency, 2),
         request_id=response._request_id,
     )
+
+
+@dataclass
+class ToolTurn:
+    """One model turn in a tool loop: the content blocks it produced plus usage."""
+    content: list
+    stop_reason: Optional[str]
+    model: str
+    requested_model: str
+    effort: str
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+    latency_s: float
+    request_id: Optional[str]
+
+
+async def create_with_tools(alias: str, system: str, messages: list[dict], tools: list[dict],
+                            tool_choice: Optional[dict] = None, max_tokens: int = 16000) -> ToolTurn:
+    """One turn of a tool-using conversation. Same models, effort and refusal fallback as complete()."""
+    provider = os.environ.get("LLM_PROVIDER", "anthropic")
+    model = MODELS[alias][provider]
+    client = make_async_client(provider)
+    kwargs = dict(model=model, max_tokens=max_tokens, system=system, messages=messages, tools=tools,
+                  output_config={"effort": EFFORT[alias]})
+    if tool_choice:
+        kwargs["tool_choice"] = tool_choice
+    start = time.time()
+    if provider == "anthropic" and model in SERVER_FALLBACK_MODELS:
+        response = await client.beta.messages.create(**kwargs, betas=[FALLBACK_BETA], fallbacks="default")
+    else:
+        response = await client.messages.create(**kwargs)
+    latency = time.time() - start
+    usage = response.usage
+    return ToolTurn(content=list(response.content), stop_reason=response.stop_reason, model=response.model,
+                    requested_model=model, effort=EFFORT[alias], input_tokens=usage.input_tokens,
+                    output_tokens=usage.output_tokens, cost_usd=estimate_cost(model, usage.input_tokens, usage.output_tokens),
+                    latency_s=round(latency, 2), request_id=response._request_id)

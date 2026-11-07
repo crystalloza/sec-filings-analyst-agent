@@ -71,3 +71,41 @@ class Answer(BaseModel):
     missing_info: Optional[str] = Field(
         description="If declined, what is missing from the documents. Otherwise null."
     )
+
+
+# ----------------------------------------------------------------------------- the agent's answer format
+# Separate classes: the frozen baseline schema above (and its prompt hashes) must not change.
+class AgentFigure(Figure):
+    source_quote: str = Field(
+        description="For source_type quote: a short passage copied exactly from a sec-filings result, including the "
+        "figure's own number as written there. Empty string otherwise."
+    )
+    source_type: Literal["quote", "record", "computed", "background"] = Field(
+        description="Where the figure comes from. record: a fact record returned by a sec-facts tool (cite its id). "
+        "quote: copied word for word from a sec-filings result (cite its paragraph_id and give source_quote). "
+        "computed: calculated by you from records (list every record id used). "
+        "background: from your general knowledge, NOT from the tools (say so in the answer)."
+    )
+    source_ids: list[str] = Field(
+        description="Record ids (like NVDA:revenue:FY2025:FY:10-K) and/or paragraph ids returned by the tools that "
+        "support this figure. Empty only for background figures."
+    )
+    source_url: Optional[str] = Field(
+        description="The EDGAR filing link for the figure, copied exactly: one entry of the record's source_urls, or "
+        "the paragraph's source_url. Null for background figures."
+    )
+
+
+class AgentAnswer(BaseModel):
+    answer: str = Field(description="The written answer to the question.")
+    figures: list[AgentFigure] = Field(
+        description="Every number stated in `answer`, one entry each. Empty if none."
+    )
+    declined: bool = Field(description="True if the tools do not provide what is needed to answer.")
+    missing_info: Optional[str] = Field(
+        description="If declined, or if part of the question could not be answered, what is missing. Otherwise null."
+    )
+    uses_background_knowledge: bool = Field(
+        description="True if any part of the answer comes from general knowledge instead of the tools. "
+        "If true, the answer text must say so explicitly."
+    )
