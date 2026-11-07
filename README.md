@@ -11,7 +11,7 @@ Finance teams spend a lot of time pulling numbers out of 10-Ks and double-checki
 
 It covers NVIDIA, AMD, Intel and Microsoft from FY2018 on, using SEC EDGAR filings. I built the tests before the agent. That way I know what a plain model already gets right, and what an agent really needs to fix.
 
-**Where it stands:** the data pipeline, the no-tools baseline, the automatic checks and the LLM judge are built. The judge has been checked against my own hand labels. The agent is built and has been run once on its frozen setup. The judge hasn't scored the agent's answers yet.
+**Where it stands:** the data pipeline, the no-tools baseline, the automatic checks and the LLM judge are built. The judge has been checked against my own hand labels. The agent is built, was run once on its frozen setup, and scored by both the code checks and the judge.
 
 Here is a real answer from the baseline (a model given the filing and nothing else). The user pushed back after the model had already corrected a false 55%:
 
@@ -123,7 +123,7 @@ Traceability is about level with the baselines, not better: 96% against 98-99%. 
 ### What the results mean
 - **Fabrication is not what separates systems here.** A frontier model recalls mega-cap financials accurately and declines when unsure; with the right filing in front of it, it did not fabricate a single figure. The original hypothesis (a text-only baseline invents numbers) was **not supported** for this model and these companies.
 - **What does separate them is traceability and coverage.** Closed-book figures cannot be checked by a reader (0% traceable). Document-based baselines cannot answer anything outside the text they were given: 13% of required figures in the core set, and 8 of the 9 answerable freshness figures. The agent can: it got all 66 required figures right. Freshness is not a lasting edge: it only reflects how recently I pulled the data, and I haven't built a refresh job.
-- **Calibration is good.** Unanswerable questions were declined, false premises were corrected, and the model held its position under scripted pushback in every case tested. The one closed-book failure was agreeing with a user's false number (55%) when nothing anchored the answer.
+- **Calibration is good.** Unanswerable questions were declined and false premises were corrected, including by the closed-book model, which said it was answering from memory. The document baselines held their position under scripted pushback in every case tested (closed-book was not run in that test). Closed-book's single "wrong" required figure (q28) is an answer that corrected the false 55% but also listed it among its figures, which the check reads as a conflicting value, not as agreement.
 
 ### The LLM judge
 Code can check a number but not whether the answer *corrected a false claim*, *refused misuse*, *avoided advice* or *told a story the filing supports*. An LLM judge (Opus 5.5, prompts frozen) scores those four as pass/fail, one call per criterion, majority of three votes. It never sees which baseline wrote the answer.
@@ -138,7 +138,18 @@ A judge is only useful if it agrees with a person, so I labeled 78 answers blind
 
 The judge never missed a failure I marked. All six disagreements were in narrative, and I checked each against the filing text: the judge was right every time. Five were flawed answers I passed (a reversed direction, an invented cause, an inference stated as fact), plus one real answer. Reading a long filing for every causal claim is exactly where a tired human slips. I relabeled those six, which makes the final 100% **not** a blind result. The 0.84 is the honest number.
 
-On the real answers, the judge found two narrative failures in about 670 judgments. Everything else held.
+On the real baseline answers, the judge found two narrative failures in about 670 judgments. Everything else held.
+
+**Judge results, all four systems** (failures out of items judged; the judge never sees which system wrote an answer):
+
+| | **Agent** | **A** | **B** | **C** |
+|---|---|---|---|---|
+| False claim corrected (incl. pushback turns) | 0 of 7 | 0 of 7 | 0 of 7 | 0 of 4 |
+| Misuse refused | 0 of 5 | 0 of 5 | 0 of 5 | 0 of 5 |
+| No investment advice | 0 of 57 | 0 of 57 | 0 of 57 | 0 of 57 |
+| Narrative matches the filing text | **2 of 10** | 1 of 9 | 1 of 9 | not judged (no text) |
+
+I read both agent narrative failures against the filings and the judge was right. In q21 the agent wrote that Intel attributed the decline to "higher one-time charges," a phrase the text it was shown never uses, and said volume was the largest driver while its own caveat said the data can't separate price from volume. In q54 it wrote that Intel weighs Arm-based rivals "as much as" AMD, right after quoting Intel calling AMD its primary competitor. The baselines' two failures were the same kind. So the one soft spot for every system is adding an interpretive claim the text doesn't support, and the agent is no better at that. These are small numbers (10 narrative answers), so I wouldn't rank the systems on them. For the agent, "the text" is the paragraphs and data records its tools returned.
 
 I relabeled 15 items a day later, without seeing my first answers (not the six I corrected): same verdict on all 15. My labels are consistent, but that doesn't make them right, as the six misses showed.
 
@@ -149,7 +160,7 @@ I relabeled 15 items a day later, without seeing my first answers (not the six I
 - **The agent was developed on the same 57 questions it is measured on**, so its numbers are probably somewhat optimistic. Changes after seeing dev results were bug fixes and one prompt clarification; none changed a rule to chase a score (listed in `docs/agent_design.md`). What I would do differently in a future iteration: write a fresh held-out question set and run the frozen agent and baselines on it. I didn't here because this is a practice project.
 - The pushback test is only **3 questions**, and every system held on all of them, so it doesn't separate them.
 - The quote check ignores small bare numbers and number words ("from 5 to 8 years", "four segments"). That is conservative and applies equally to the baselines and the agent, but it under-counts traceability a little (4 of the agent's 65 quote figures).
-- The judge has not yet scored the agent, so the language side of its behavior (refusal wording, how it corrected a false claim) is checked by code only.
+- The narrative check judges the agent only against what its tools returned, so an answer can fail because the agent fetched too little, not only because it over-claimed.
 - The agent's run logs hold full tool results. That is fine for public filings, but on confidential data the logs would need the same protection as the data.
 - "Misread versus fabricated" is a heuristic over numbers found in the documents. Figures marked segment, non-GAAP or other are supported by quotes, not compared with the warehouse, and their fiscal period is not verified.
 - The judge is validated on 78 items, and only **2 real answers** in that set actually fail. It catches planted failures well, but its real-world failure detection rests on very few examples. I also labeled alone; a second labeler is better.
