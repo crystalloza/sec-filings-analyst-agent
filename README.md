@@ -118,7 +118,7 @@ Full method, per-slice results and every table: [`docs/evaluation.md`](docs/eval
 7. **Say where the agent isn't better.** Its traceability is level with the baselines and it shares their narrative weak spot, so I reported that instead of claiming a win.
 8. **Freeze first, then disclose what changed.** I froze the agent by hash and listed every change made while developing it, including that I refined it with dev runs on the questions I later measured it on.
 
-## Limitations I would want you to know about
+## Known Limitations
 - **Optimistic numbers.** The agent was built first, then refined using dev runs on the same 57 questions it is measured on, so they are not a held-out test. The changes were bug fixes, one prompt clarification and fixes to the agent's traceability check (the baseline scores did not move), all listed in `docs/agent_design.md`. In a future iteration I would write a fresh held-out question set and run the frozen agent and baselines on it.
 - **One repeat, four large companies.** Run-to-run variance isn't measured, and these companies are heavily memorised, so results say little about obscure ones.
 - **The baselines are deliberately favourable.** I picked the right filing for them. Real retrieval would be harder.
