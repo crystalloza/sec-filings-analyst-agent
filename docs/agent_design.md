@@ -55,7 +55,7 @@ If the agent doesn't win on one of these, that gets reported as it is.
 - Four large, heavily-memorised companies; one repeat per question.
 
 ## How the agent was developed, and what that means for the results
-The agent was developed with dev runs on the same 57 questions the measured run uses, and then frozen by hash before the measured run. The questions were written before the agent existed, and the baselines were frozen before any agent work, but the agent's setup was adjusted while looking at how it behaved on these questions.
+The agent was built first (the loop, the tools, the answer format and the checks, tested with a scripted model and a few dev questions). I then ran it on the same 57 questions the measured run uses, read the results, fixed what they showed, and froze it by hash before the measured run. The questions were written before the agent existed, and the baselines were frozen before any agent work, but the agent's setup and its traceability check were adjusted while looking at how it behaved on these questions.
 
 Changes made after seeing dev results:
 1. The tool list stays identical on every turn. A bug fix: the API rejects a conversation whose reasoning blocks were written under a different tool list, and the first design swapped the list at the 8-call limit.
@@ -64,6 +64,13 @@ Changes made after seeing dev results:
 4. `figures` and `missing_info` became optional in the answer format.
 5. A prompt exception for a number that appears only because the user claimed it and the agent is correcting it (it no longer lists that number as a figure). This fixed a conflict between the prompt ("list every number") and the check (listing a rebutted claim counted as stating it).
 
-None of these changed an accuracy or refusal rule to chase a score. They are bug fixes and one clarification.
+Changes to the agent's traceability check after seeing agent output (the baseline scores did not move; a regression test pins them):
+1. A figure taken from a derived record (such as total liabilities) counts for "derive with label."
+2. A stored growth rate with no independent recomputation in the warehouse gets its own tier (`verified_record`) instead of "unsupported."
+3. Record and paragraph ids written in the answer's prose are not counted as unlisted numbers.
+4. A stored percent can no longer support a dollar concept (a growth rate labelled as gross profit).
+5. A number the user wrote in a pushback message is not counted as an unlisted claim (agent only).
 
-**Caveat.** A fully clean evaluation would run the frozen agent on a blind set of questions it was never developed against. This version keeps the same 57 questions because it is an MVP, so the agent's numbers are likely somewhat optimistic compared with unseen questions. The comparison with the baselines is still fair on the setup (same questions, same checks, same judge), but the absolute numbers should be read with that in mind. What I would do differently in a future iteration: write a fresh held-out question set and run the frozen agent and the baselines on it. I am not doing that here because this is a practice project.
+None of the agent changes altered an accuracy or refusal rule to chase a score: they are bug fixes and one clarification. The checker changes fix false negatives and gaps that I verified by hand against the answers and filings.
+
+**Caveat.** A fully clean evaluation would run the frozen agent on a blind set of questions it was never refined against. This version keeps the same 57 questions because it is an MVP, so they are not a held-out test and the agent's numbers are likely somewhat optimistic compared with unseen questions. The comparison with the baselines is still fair on the setup (same questions, same checks, same judge), but the absolute numbers should be read with that in mind. What I would do differently in a future iteration: write a fresh held-out question set and run the frozen agent and the baselines on it. I am not doing that here because this is a practice project.
