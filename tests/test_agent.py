@@ -2,11 +2,14 @@
 
 import asyncio
 import json
+from pathlib import Path
 from types import SimpleNamespace as NS
 
 import pytest
 
 from sec_filings_analyst_agent import agent
+from sec_filings_analyst_agent.build import DB_PATH
+from sec_filings_analyst_agent.filing_search import INDEX_DIR
 from sec_filings_analyst_agent.agent_prompts import MAX_DATA_CALLS, agent_hash
 
 VALID = {"answer": "ok", "figures": [], "declined": False, "missing_info": None, "uses_background_knowledge": False}
@@ -282,6 +285,8 @@ def test_real_servers_expose_the_six_tools_and_the_definitions_are_identical_acr
     assert all(d["description"] and d["input_schema"] for d in first)
 
 
+@pytest.mark.skipif(not (Path(DB_PATH).exists() and (INDEX_DIR / "embeddings.npy").exists()),
+                    reason="warehouse and search index not built (see docs/running.md)")
 def test_a_scripted_model_through_the_real_servers_logs_real_records():
     from contextlib import AsyncExitStack
 

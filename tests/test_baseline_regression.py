@@ -12,7 +12,9 @@ from pathlib import Path
 import pytest
 
 from sec_filings_analyst_agent import checks
+from sec_filings_analyst_agent.build import DB_PATH
 
+pytestmark = pytest.mark.skipif(not Path(DB_PATH).exists(), reason="warehouse not built (see docs/running.md)")
 RUNS = Path(__file__).resolve().parents[1] / "eval" / "runs"
 GOLDEN = json.loads((Path(__file__).parent / "golden_baseline_headlines.json").read_text())
 

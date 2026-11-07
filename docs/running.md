@@ -10,14 +10,14 @@ uv sync
 cp .env.example .env     # then fill in SEC_CONTACT_EMAIL and ANTHROPIC_API_KEY
 ```
 
-**Build the data** (no API key needed; the downloaded data is not in the repo):
+**Build the data** (no API key needed; the downloaded data is not in the repo). Everything except the embeddings step takes under a minute. Tests that need the warehouse or the search index skip with a clear reason until you have built them.
 ```bash
 uv run python -m sec_filings_analyst_agent.fetch
 uv run python -m sec_filings_analyst_agent.flatten
 uv run python -m sec_filings_analyst_agent.fetch_filings
 uv run python -m sec_filings_analyst_agent.parse_filings
 uv run python -m sec_filings_analyst_agent.build
-uv run python -m sec_filings_analyst_agent.filing_search --build   # local embeddings for text search, ~5 min
+uv run python -m sec_filings_analyst_agent.filing_search --build   # local embeddings for text search, 5-15 min depending on the machine
 uv run pytest
 ```
 Some tests compare against the warehouse and the search index, so run them after the build. The two tool servers run with `uv run python -m sec_filings_analyst_agent.mcp_facts` and `...mcp_filings`.
@@ -39,3 +39,5 @@ uv run python -m sec_filings_analyst_agent.judge --plan --runs eval/runs/<run>.j
 uv run python -m sec_filings_analyst_agent.agreement --labels eval/labeling/human_labels.json --judged eval/judge_runs/<judged_labeled>.jsonl
 ```
 The measured prompts are frozen by hash, so a run refuses to start if they have changed.
+
+**A note on reproducing the results.** The data is downloaded live from the SEC, so a build far in the future can differ from the one behind these results (new filings, restatements). The committed run logs and their scored output (`eval/runs/`, `eval/judge_runs/`) are the record of what I measured. Rescoring them with `checks` against a fresh build reproduces the numbers in the README, which I checked from a clean clone.

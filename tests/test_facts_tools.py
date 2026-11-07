@@ -3,6 +3,11 @@
 import pytest
 
 from sec_filings_analyst_agent import facts_tools as f
+from pathlib import Path
+
+from sec_filings_analyst_agent.build import DB_PATH
+
+pytestmark = pytest.mark.skipif(not Path(DB_PATH).exists(), reason="warehouse not built (see docs/running.md)")
 
 
 @pytest.fixture(scope="module")

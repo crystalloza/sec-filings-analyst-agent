@@ -9,7 +9,13 @@ import json
 import pytest
 
 from sec_filings_analyst_agent import checks, facts_tools as f, filing_search as fs
+from sec_filings_analyst_agent.build import DB_PATH
 from sec_filings_analyst_agent.traceability import build_evidence, check_agent_source, parse_display
+from pathlib import Path
+
+pytestmark = pytest.mark.skipif(
+    not (Path(DB_PATH).exists() and (fs.INDEX_DIR / "embeddings.npy").exists()),
+    reason="warehouse and search index not built (see docs/running.md)")
 
 
 def call(tool, result):
