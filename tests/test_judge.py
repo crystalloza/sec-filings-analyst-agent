@@ -160,3 +160,33 @@ def test_advice_collapses_not_applicable_into_pass_for_the_analysis_only():
     assert judge.analysis_verdict("advice", "not_applicable") == "pass"
     assert judge.analysis_verdict("advice", "fail") == "fail"
     assert judge.analysis_verdict("narrative", "not_applicable") == "not_applicable"
+
+
+# ----------------------------------------------------------------------------- the agent as a judged system
+def _agent_calls():
+    para = {"results": [{"paragraph_id": "0001-26-000001:7:0001", "ticker": "NVDA", "fiscal_year": 2025, "item": "7",
+                         "heading": "Gross Margin", "text": "Gross margin rose because of data center mix.", "source_url": "u"}]}
+    rec = {"records": [{"id": "NVDA:revenue:FY2025:FY:10-K", "label": "Revenue", "display": "$130,497 million", "ticker": "NVDA",
+                        "fiscal_year": 2025, "fiscal_period": "FY", "flags": ["restated"]}]}
+    junk = [{"result_text": "not json", "is_error": False}, {"result_text": None, "is_error": True, "rejected": "x"}]
+    return [{"result_text": json.dumps(para), "is_error": False}, {"result_text": json.dumps(rec), "is_error": False}] + junk
+
+
+def test_agent_documents_lists_returned_paragraphs_and_records_and_skips_junk():
+    from sec_filings_analyst_agent.judge import agent_documents
+    text = agent_documents(_agent_calls())
+    assert "Gross margin rose because of data center mix." in text and "Item 7, Gross Margin" in text
+    assert "Revenue: $130,497 million (NVDA fiscal 2025 FY) [restated]" in text
+    assert "(none)" in agent_documents([])
+
+
+def test_agent_narrative_items_carry_what_the_agent_saw_and_the_judge_prompt_does_not_name_the_system():
+    from sec_filings_analyst_agent.judge import build_items, user_prompt
+    q = {"id": "qn", "question": "Why did gross margin rise?", "type": "narrative", "expected_behavior": "answer"}
+    rec = {"question_id": "qn", "variant": "AGENT", "repeat": 0, "turn": 1, "mode": "measured", "tool_calls": _agent_calls(),
+           "parsed": {"answer": "Because of data center mix.", "declined": False, "missing_info": None, "figures": []}}
+    items = build_items([rec], [], {"qn": q}, {})
+    narrative = [i for i in items if i["criterion"] == "narrative"][0]
+    assert "data center mix" in narrative["documents_text"]
+    prompt = user_prompt(narrative, narrative["documents_text"])
+    assert "AGENT" not in prompt and "tool" not in prompt.lower().split("filing text returned")[0]

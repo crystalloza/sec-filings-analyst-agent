@@ -49,6 +49,40 @@ def render_answer(parsed: dict) -> str:
     return text
 
 
+def agent_documents(tool_calls: list[dict]) -> str:
+    """What the agent was shown, as text for the judge's narrative criterion: the filing paragraphs its tools returned,
+    then the data records (many of its claims rest on figures from records, not from text). Built from the run log."""
+    paragraphs, records = {}, {}
+    for tc in tool_calls:
+        if not tc.get("result_text") or tc.get("is_error") or tc.get("rejected"):
+            continue
+        try:
+            data = json.loads(tc["result_text"])
+        except ValueError:
+            continue
+        if not isinstance(data, dict):
+            continue
+        for r in (data.get("results") or []) + (data.get("neighbors") or []) + ([data["paragraph"]] if "paragraph" in data else []):
+            if isinstance(r, dict) and r.get("paragraph_id"):
+                if len(r.get("text") or "") >= len((paragraphs.get(r["paragraph_id"]) or {}).get("text") or ""):
+                    paragraphs[r["paragraph_id"]] = r
+        for r in data.get("records") or []:
+            if isinstance(r, dict) and r.get("id") and r.get("display"):
+                records.setdefault(r["id"], r)
+    parts = ["FILING TEXT RETURNED BY THE SEARCH TOOLS"]
+    for pid, r in paragraphs.items():
+        parts.append(f"[{r.get('ticker')} fiscal {r.get('fiscal_year')} 10-K, Item {r.get('item')}, {r.get('heading')}]\n{r.get('text')}")
+    if not paragraphs:
+        parts.append("(none)")
+    parts.append("\nDATA RECORDS RETURNED BY THE DATA TOOLS")
+    for rid, r in records.items():
+        flags = f" [{', '.join(r['flags'])}]" if r.get("flags") else ""
+        parts.append(f"{r.get('label') or r.get('metric') or rid}: {r['display']} ({r.get('ticker')} fiscal {r.get('fiscal_year')} {r.get('fiscal_period')}){flags}")
+    if not records:
+        parts.append("(none)")
+    return "\n\n".join(parts)
+
+
 def applicable_criteria(question: dict, variant: str) -> list[str]:
     crit = ["advice"]
     if question.get("expected_behavior") == "correct_premise":
@@ -88,10 +122,13 @@ def build_items(main_records: list[dict], pressure_records: list[dict], question
                 continue  # a decline has no explanation to reconcile
             if crit in ("premise", "misuse") and q["id"] not in reference:
                 raise KeyError(f"{q['id']} needs a reference line in judge_context.json for criterion {crit}")
-            items.append({"item_id": item_id("main", q["id"], r["variant"], r["repeat"], crit), "criterion": crit,
-                          "source": "main", "question_id": q["id"], "variant": r["variant"], "repeat": r["repeat"],
-                          "conversation": convo, "reference": reference.get(q["id"]) if crit in ("premise", "misuse") else None,
-                          "documents_ref": r.get("documents")})
+            item = {"item_id": item_id("main", q["id"], r["variant"], r["repeat"], crit), "criterion": crit,
+                    "source": "main", "question_id": q["id"], "variant": r["variant"], "repeat": r["repeat"],
+                    "conversation": convo, "reference": reference.get(q["id"]) if crit in ("premise", "misuse") else None,
+                    "documents_ref": r.get("documents")}
+            if crit == "narrative" and r["variant"] == "AGENT":     # no fixed document set: use what its tools returned
+                item["documents_text"] = agent_documents(r.get("tool_calls") or [])
+            items.append(item)
     by_conv = defaultdict(dict)
     for r in _last_successful(pressure_records):
         by_conv[r["conversation_id"]][r.get("turn") or 1] = r
@@ -365,12 +402,12 @@ def main() -> None:
     # threads), and confirm the judge is shown the same documents the answerer was.
     cache: dict[str, str] = {}
     for it in items:
-        if it["criterion"] == "narrative" and it["question_id"] not in cache:
+        if it["criterion"] == "narrative" and it["question_id"] not in cache and "documents_text" not in it:
             ctx = load_context(con, questions[it["question_id"]])
             if [d.ref() for d in ctx.documents] != it["documents_ref"]:
                 sys.exit(f"{it['question_id']}: the documents now loaded differ from the ones the answerer was shown")
             cache[it["question_id"]] = format_documents(ctx.documents)
-    docs_for = lambda it: cache[it["question_id"]]
+    docs_for = lambda it: it["documents_text"] if "documents_text" in it else cache[it["question_id"]]
     if args.plan:
         return plan(items, args.n, docs_for)
     if not args.trial:
