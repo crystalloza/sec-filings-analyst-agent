@@ -73,6 +73,7 @@ def test_invalid_submit_is_retried_then_accepted():
     out, _, messages = converse(script)
     assert out["end_reason"] == "submitted" and out["submit_retries"] == 1
     assert messages[2]["content"][0]["is_error"] is True and "Invalid answer" in messages[2]["content"][0]["content"]
+    assert out["rejected_submits"][0]["input"] == bad and out["rejected_submits"][0]["errors"][0]["loc"] == "declined"
 
 
 def test_too_many_invalid_submits_stop_the_run():
@@ -81,15 +82,16 @@ def test_too_many_invalid_submits_stop_the_run():
     assert out["end_reason"] == "invalid_submit" and out["parsed"] is None
 
 
-def test_after_eight_data_calls_the_data_tools_are_withheld_and_only_submit_is_offered():
-    turns = [turn(use(i, "get_concept", {"n": i})) for i in range(MAX_DATA_CALLS)] + [turn(use(99, "submit_answer", VALID))]
+def test_after_eight_data_calls_further_calls_are_rejected_and_the_tool_list_never_changes():
+    """The model's reasoning blocks are bound to the exact tool list, so the list must be identical on every turn."""
+    turns = [turn(use(i, "get_concept", {"n": i})) for i in range(MAX_DATA_CALLS + 1)] + [turn(use(99, "submit_answer", VALID))]
     script = Script(turns)
     out, hub, messages = converse(script)
     assert out["end_reason"] == "submitted" and out["n_data_calls"] == MAX_DATA_CALLS and out["budget_exhausted"]
-    assert len(hub.calls) == MAX_DATA_CALLS
-    names, choice, _ = script.offered[-1]
-    assert names == ["submit_answer"] and choice is None        # offered alone; never forced (Sonnet 5.5 rejects forcing)
-    assert all(c is None for _, c, _ in script.offered)
+    assert len(hub.calls) == MAX_DATA_CALLS                                   # the 9th call was not executed
+    assert len({tuple(names) for names, _, _ in script.offered}) == 1          # same tool list on every turn
+    assert all(c is None for _, c, _ in script.offered)                        # never forced (Sonnet 5.5 rejects forcing)
+    assert [c for c in out["tool_calls"] if c["rejected"]]
     texts = [b for m in messages if m["role"] == "user" and isinstance(m["content"], list) for b in m["content"] if b["type"] == "text"]
     assert any("budget is used up" in t["text"] for t in texts)
 
@@ -296,3 +298,24 @@ def test_a_scripted_model_through_the_real_servers_logs_real_records():
     by_tool = {t["tool"]: t for t in rec["tool_calls"]}
     assert "NVDA:revenue:FY2025:FY:10-K" in by_tool["get_concept"]["result_text"] and not by_tool["get_concept"]["is_error"]
     assert "paragraph_id" in by_tool["search_filing"]["result_text"] and rec["n_data_calls"] == 2
+
+
+def test_a_turn_without_a_submit_keeps_its_text_and_every_turn_records_block_types():
+    script = Script([turn(NS(type="text", text="I think it was 40%")), turn(NS(type="text", text="Final: 40%"))])
+    out, _, _ = converse(script)
+    assert out["end_reason"] == "no_submit" and out["last_text"] == "Final: 40%"
+    assert out["model_turns"][0]["block_types"] == ["text"]
+
+
+def test_an_answer_with_no_numbers_may_omit_figures_and_missing_info():
+    from sec_filings_analyst_agent.schemas import AgentAnswer
+    a = AgentAnswer.model_validate({"answer": "No.", "declined": True, "uses_background_knowledge": False})
+    assert a.figures == [] and a.missing_info is None
+    with pytest.raises(Exception):
+        AgentAnswer.model_validate({"answer": "No."})            # declined and the background flag stay required
+
+
+def test_prompt_and_tool_text_allow_one_submission_per_user_message():
+    from sec_filings_analyst_agent.agent_prompts import SYSTEM_AGENT
+    assert "follow-up" in SYSTEM_AGENT and "needs its own submit_answer" in SYSTEM_AGENT
+    assert "each user message" in agent.SUBMIT_DEF["description"]

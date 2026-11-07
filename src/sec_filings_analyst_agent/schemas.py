@@ -99,10 +99,12 @@ class AgentFigure(Figure):
 class AgentAnswer(BaseModel):
     answer: str = Field(description="The written answer to the question.")
     figures: list[AgentFigure] = Field(
+        default_factory=list,
         description="Every number stated in `answer`, one entry each. Empty if none."
     )
     declined: bool = Field(description="True if the tools do not provide what is needed to answer.")
     missing_info: Optional[str] = Field(
+        default=None,
         description="If declined, or if part of the question could not be answered, what is missing. Otherwise null."
     )
     uses_background_knowledge: bool = Field(

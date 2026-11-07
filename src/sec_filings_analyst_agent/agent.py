@@ -7,8 +7,10 @@
 
 How a question runs (decisions in docs/agent_design.md):
   * Both servers are started once and spoken to over MCP; their tool menus are shown to the model.
-  * At most 8 DATA tool calls per question. After the 8th, only submit_answer is offered and the model is told to
-    submit. (Forcing the choice is not possible: Sonnet 5.5 rejects tool_choice "tool"/"any".)
+  * At most 8 DATA tool calls per question. After the 8th, further data calls are rejected and the model is told to
+    submit. The tool list is NEVER changed mid-conversation: the model's reasoning blocks are bound to the exact
+    tool list they were written under, and a changed list makes the API reject the conversation. (Forcing the
+    choice is not possible either: Sonnet 5.5 rejects tool_choice "tool"/"any".)
   * The model ends by calling submit_answer, whose input is the structured AgentAnswer.
   * Every tool call is logged with its FULL result text: that is what the traceability check later verifies against.
 Pressure mode (--pressure) continues the same conversation with the question's scripted pushback and a fresh budget.
@@ -46,7 +48,8 @@ VARIANT = "AGENT"
 
 SUBMIT_DEF = {
     "name": SUBMIT,
-    "description": "Submit your final answer. Call this exactly once, when you are done. "
+    "description": "Submit your final answer to the user's latest message. Call this exactly once for each user "
+                   "message (the first question and every follow-up), when you are done. "
                    "Every number in the answer text must also be listed in figures.",
     "input_schema": AgentAnswer.model_json_schema(),
 }
@@ -100,20 +103,20 @@ async def converse(messages: list[dict], hub, alias: str, model_call=create_with
     Appends every assistant turn and tool-result message to `messages`. When the answer is accepted, the last
     message is the user message holding its tool_result, so a caller can add a follow-up block to it.
     """
-    tool_calls, turns = [], []
-    data_calls, retries, nudged, parsed, end_reason, error = 0, 0, False, None, "max_turns", None
+    tool_calls, turns, rejected_submits = [], [], []
+    data_calls, retries, nudged, parsed, end_reason, error, last_text = 0, 0, False, None, "max_turns", None, ""
     for i in range(MAX_TURNS):
-        exhausted = data_calls >= MAX_DATA_CALLS
-        tools = [SUBMIT_DEF] if exhausted else hub.defs + [SUBMIT_DEF]
         try:
-            turn = await model_call(alias, SYSTEM_AGENT, messages, tools, None)
+            turn = await model_call(alias, SYSTEM_AGENT, messages, hub.defs + [SUBMIT_DEF], None)
         except Exception as e:  # keep what the run found so far (tool calls, cost); --resume retries it
             end_reason, error = "error", f"{type(e).__name__}: {e}"[:500]
             break
         uses = [b for b in turn.content if b.type == "tool_use"]
         turns.append({"request_id": turn.request_id, "stop_reason": turn.stop_reason, "model": turn.model,
                       "effort": turn.effort, "input_tokens": turn.input_tokens, "output_tokens": turn.output_tokens,
-                      "cost_usd": round(turn.cost_usd, 5), "latency_s": turn.latency_s, "tool_uses": [u.name for u in uses]})
+                      "cost_usd": round(turn.cost_usd, 5), "latency_s": turn.latency_s, "tool_uses": [u.name for u in uses],
+                      "block_types": [b.type for b in turn.content]})
+        last_text = "\n".join(b.text for b in turn.content if b.type == "text")[:2000]
         messages.append({"role": "assistant", "content": [block_to_param(b) for b in turn.content]})
         if not uses:
             if nudged:
@@ -134,6 +137,8 @@ async def converse(messages: list[dict], hub, alias: str, model_call=create_with
                     results.append(_result(b.id, "Answer recorded."))
                 except ValidationError as e:
                     retries += 1
+                    rejected_submits.append({"turn": i, "input": b.input, "errors": [
+                        {"loc": ".".join(map(str, err["loc"])), "msg": err["msg"]} for err in e.errors()]})
                     detail = "; ".join(f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in e.errors()[:5])
                     results.append(_result(b.id, f"Invalid answer, fix and call submit_answer again: {detail}", True))
             elif b.name not in hub.route:
@@ -170,7 +175,7 @@ async def converse(messages: list[dict], hub, alias: str, model_call=create_with
         messages.append({"role": "user", "content": user_content})
     return {"parsed": parsed, "end_reason": end_reason, "tool_calls": tool_calls, "model_turns": turns,
             "n_data_calls": data_calls, "budget_exhausted": data_calls >= MAX_DATA_CALLS, "submit_retries": retries,
-            "error": error}
+            "rejected_submits": rejected_submits, "last_text": last_text, "error": error}
 
 
 # ----------------------------------------------------------------------------- records
@@ -181,8 +186,8 @@ def _record(q: dict, mode: str, repeat: int, turn: int, conv_id: str | None, pus
             "answer_in_docs": None}
 
 
-async def run_turn(q, mode, repeat, turn, conv_id, pushback, ahash, messages, hub, model_call) -> dict:
-    alias = "dev" if mode == "dev" else "measured"
+async def run_turn(q, mode, repeat, turn, conv_id, pushback, ahash, messages, hub, model_call, alias=None) -> dict:
+    alias = alias or ("dev" if mode == "dev" else "measured")
     rec = _record(q, mode, repeat, turn, conv_id, pushback, ahash)
     try:
         out = await converse(messages, hub, alias, model_call)
@@ -191,6 +196,7 @@ async def run_turn(q, mode, repeat, turn, conv_id, pushback, ahash, messages, hu
                     "parsed": out["parsed"].model_dump() if out["parsed"] else None, "end_reason": out["end_reason"],
                     "tool_calls": out["tool_calls"], "model_turns": turns, "n_data_calls": out["n_data_calls"],
                     "budget_exhausted": out["budget_exhausted"], "submit_retries": out["submit_retries"],
+                    "rejected_submits": out["rejected_submits"], "last_text": out["last_text"],
                     "cost_usd": round(sum(t["cost_usd"] for t in turns), 5),
                     "input_tokens": sum(t["input_tokens"] for t in turns), "output_tokens": sum(t["output_tokens"] for t in turns),
                     "latency_s": round(sum(t["latency_s"] for t in turns), 2), "error": out["error"]})
@@ -200,15 +206,15 @@ async def run_turn(q, mode, repeat, turn, conv_id, pushback, ahash, messages, hu
     return rec
 
 
-async def run_question(q, mode, repeat, pressure, ahash, hub, model_call=create_with_tools) -> list[dict]:
+async def run_question(q, mode, repeat, pressure, ahash, hub, model_call=create_with_tools, alias=None) -> list[dict]:
     conv_id = str(uuid.uuid4()) if pressure else None
     messages = [{"role": "user", "content": q["question"]}]
-    r1 = await run_turn(q, mode, repeat, 1, conv_id, None, ahash, messages, hub, model_call)
+    r1 = await run_turn(q, mode, repeat, 1, conv_id, None, ahash, messages, hub, model_call, alias)
     records = [r1]
     if pressure and r1["parsed"] is not None:
         # the accepted answer's tool_result is the last message; add the pushback beside it, then a fresh budget
         messages[-1]["content"].append({"type": "text", "text": q["pushback"]})
-        records.append(await run_turn(q, mode, repeat, 2, conv_id, q["pushback"], ahash, messages, hub, model_call))
+        records.append(await run_turn(q, mode, repeat, 2, conv_id, q["pushback"], ahash, messages, hub, model_call, alias))
     return records
 
 
@@ -282,7 +288,7 @@ async def amain(args) -> None:
                 if state["stopped"] or state["spent"] >= args.max_cost:
                     state["stopped"] = True
                     return
-                recs = await run_question(q, args.mode, repeat, args.pressure, ahash, hub)
+                recs = await run_question(q, args.mode, repeat, args.pressure, ahash, hub, alias=args.alias)
             with out_path.open("a") as f:
                 for r in recs:
                     f.write(json.dumps(r) + "\n")
@@ -311,6 +317,8 @@ def main() -> None:
     p.add_argument("--ids", type=str, default=None, help="comma-separated question ids")
     p.add_argument("--limit", type=int, default=None)
     p.add_argument("--pressure", action="store_true")
+    p.add_argument("--alias", choices=["dev", "measured"], default=None,
+                   help="model to use (default: dev for --mode dev). --alias measured with --mode dev runs Sonnet without the lock; not for reported results")
     p.add_argument("--workers", type=int, default=3, help="questions run at the same time")
     p.add_argument("--max-cost", type=float, default=3.0)
     p.add_argument("--freeze", action="store_true")
