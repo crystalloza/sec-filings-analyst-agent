@@ -38,8 +38,9 @@ from sec_filings_analyst_agent.numbers import (
     to_canonical, to_stated_space, token_matches_figure,
 )
 from sec_filings_analyst_agent.quotes import _number_value, canonicalize, check_quote
+from sec_filings_analyst_agent.traceability import Evidence, build_evidence, check_agent_source
 
-GOOD = {"verified_warehouse", "verified_quote"}
+GOOD = {"verified_warehouse", "verified_quote", "verified_record"}
 BAD = {"fabricated", "misread", "wrong_period", "concept_mislabel", "scale_error", "unsupported"}
 METRIC_TO_CONCEPT = {"revenue_yoy_growth": "revenue_growth"}
 DERIVE_WORDS = re.compile(r"\b(derive[sd]?|calculate[sd]?|computed?|computation|implied)\b", re.IGNORECASE)
@@ -201,6 +202,22 @@ def check_figure(con, fig: dict, docs: DocsText) -> dict:
     return res
 
 
+def check_agent_figure(con, fig: dict, docs: DocsText, ev: Evidence) -> dict:
+    """Correctness against the warehouse (the same check as for the baselines) plus the agent's traceability,
+    which is judged only from what the agent's tools returned. The two are reported separately."""
+    fig = {**fig, "is_computed": fig.get("source_type") == "computed"}
+    res = check_figure(con, fig, docs)
+    trace = check_agent_source(fig, ev, normalize_company(fig["company"]))
+    res.update(trace=trace, traceable=trace["traceable"], source_type=trace["type"],
+               from_derived_record=any(str(i).endswith(":derived") for i in fig.get("source_ids") or []))
+    if res["status"] == "unsupported" and trace["type"] == "record" and trace["traceable"] is True:
+        # Matches the warehouse record the agent cited, but there is no independent recomputation for this concept
+        # (for example a stored growth rate). Honest, weaker tier: it can be wrong only if the stored metric is wrong.
+        res.update(status="verified_record", detail="matches the cited warehouse record; no independent reference for this concept")
+        res["flags"] = [f for f in res["flags"] if f not in ("number_in_documents", "number_not_in_documents")] + ["record_only"]
+    return res
+
+
 # ----------------------------------------------------------------------------- required figures
 def expected_concept(item: dict) -> str:
     if "concept" in item:
@@ -230,13 +247,18 @@ def evaluate_required(question: dict, results: list[dict], declined: bool = Fals
 
 
 # ----------------------------------------------------------------------------- prose, arithmetic
-def prose_unlisted(answer: str, results: list[dict], question_text: str = "") -> list[str]:
+CITATION_IDS = re.compile(r"\d{10}-\d{2}-\d{6}(?::(?:1A|1|7):\d{4})?|[A-Z]{3,4}:[a-z_]+:FY\d{4}:[A-Z0-9]+:[\w-]+|https?://\S+")
+
+
+def prose_unlisted(answer: str, results: list[dict], question_text: str = "", strip_citations: bool = False) -> list[str]:
     """Numbers stated in the prose that do not correspond to any listed figure.
 
     A number the user wrote in their own question (and the answer repeats while rebutting it) is not a claim.
     """
     echoed = prose_numbers(question_text or "")
     unlisted = []
+    if strip_citations:                              # the agent cites record ids, paragraph ids and links in its prose
+        answer = CITATION_IDS.sub(" ", answer or "")
     for token in prose_numbers(answer or ""):
         if any(e.kind == token.kind and abs(e.value - token.value) < 1e-9 and e.scale_word == token.scale_word for e in echoed):
             continue
@@ -319,7 +341,7 @@ def behavior_verdict(question: dict, parsed: dict, results: list[dict], required
         verdict = "pass" if not false_hit else "fail"
         reasons = ["false value stated"] if false_hit else []
     elif behavior == "derive_with_label":
-        target = [r for r in results if r["status"] == "verified_warehouse" and r["is_computed"]]
+        target = [r for r in results if r["status"] == "verified_warehouse" and (r["is_computed"] or r.get("from_derived_record"))]
         labelled = bool(DERIVE_WORDS.search(parsed["answer"] or ""))
         verdict = "pass" if target and labelled else "fail"
         reasons = [] if verdict == "pass" else [f"computed_and_verified={bool(target)}", f"labelled={labelled}"]
@@ -334,7 +356,7 @@ def behavior_verdict(question: dict, parsed: dict, results: list[dict], required
 
 
 # ----------------------------------------------------------------------------- one record
-def score_record(con, question: dict, record: dict, docs: DocsText) -> dict:
+def score_record(con, question: dict, record: dict, docs: DocsText, evidence: Evidence | None = None) -> dict:
     base = {k: record.get(k) for k in ("run_id", "question_id", "variant", "repeat", "turn", "conversation_id", "mode")}
     base["question_type"] = question.get("type")
     base["slice"] = question.get("slice")
@@ -350,7 +372,7 @@ def score_record(con, question: dict, record: dict, docs: DocsText) -> dict:
     figures = []
     for f in parsed["figures"]:
         try:
-            figures.append(check_figure(con, f, docs))
+            figures.append(check_figure(con, f, docs) if evidence is None else check_agent_figure(con, f, docs, evidence))
         except Exception as e:  # one malformed figure must not sink a whole scoring run
             figures.append({"company": str(f.get("company")), "concept": f.get("concept", "other"), "metric": f.get("metric", ""),
                             "fiscal_year": f.get("fiscal_year"), "fiscal_period": f.get("fiscal_period"), "value": f.get("value"),
@@ -364,11 +386,12 @@ def score_record(con, question: dict, record: dict, docs: DocsText) -> dict:
         **base, "error": None, "declined": parsed["declined"], "api_refusal": api_refusal,
         "figures": figures, "required": required, "n_extras": len(extras),
         "extras_by_status": dict(Counter(f["status"] for f in extras)),
-        "prose_unlisted": prose_unlisted(parsed["answer"], figures, question.get("question", "")),
+        "prose_unlisted": prose_unlisted(parsed["answer"], figures, question.get("question", ""), strip_citations=evidence is not None),
         "arithmetic": check_arithmetic(figures),
+        # `_closed_book` also switches off the "answer is not in the documents" adjustment, which does not apply to the agent
         "behavior": behavior_verdict({**question, "_answer_in_docs": (record.get("answer_in_docs") or {}).get("overall")
                                       or question.get("answer_in_docs"),   # the question's own hand-set annotation, if the run predates it
-                                      "_closed_book": record.get("variant") == "C"}, parsed, figures, required),
+                                      "_closed_book": record.get("variant") == "C" or evidence is not None}, parsed, figures, required),
         "answer_in_docs": (record.get("answer_in_docs") or {}).get("overall"),
     }
 
@@ -412,23 +435,34 @@ def score_runs(path: Path, con=None) -> tuple[list[dict], Path]:
     con = con or duckdb.connect(str(DB_PATH), read_only=True)
     raw_records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
     records = dedupe_resumed(raw_records)
-    mode = records[0]["mode"] if records else "dev"
     questions = {}
-    for line in QUESTION_FILES[mode].read_text().splitlines():
-        if line.strip():
-            q = json.loads(line)
-            questions[q["id"]] = q
+    for mode_file in (QUESTION_FILES["dev"], QUESTION_FILES["measured"]):   # dev runs may use either file; ids are distinct
+        for line in mode_file.read_text().splitlines():
+            if line.strip():
+                q = json.loads(line)
+                questions[q["id"]] = q
     docs_cache: dict[str, DocsText] = {}
+    calls_by_turn: dict[tuple, list[dict]] = {}
+    for rec in records:                               # the agent's evidence is everything its tools returned so far
+        if rec.get("variant") == "AGENT":
+            calls_by_turn[(rec.get("conversation_id"), rec.get("turn") or 1, rec["question_id"], rec["repeat"])] = rec.get("tool_calls") or []
     results = []
     for rec in records:
         q = questions[rec["question_id"]]
-        if rec.get("variant") == "C":                 # closed-book: the model was shown no documents
+        evidence = None
+        if rec.get("variant") == "AGENT":
+            turn = rec.get("turn") or 1
+            earlier = [calls_by_turn.get((rec.get("conversation_id"), t, rec["question_id"], rec["repeat"]), [])
+                       for t in range(1, turn)] if rec.get("conversation_id") else []
+            evidence = build_evidence([c for calls in earlier for c in calls] + (rec.get("tool_calls") or []))
+            docs = DocsText.from_text(evidence.shown_text)
+        elif rec.get("variant") == "C":               # closed-book: the model was shown no documents
             docs = DocsText.from_text("")
         else:
             if q["id"] not in docs_cache:
                 docs_cache[q["id"]] = DocsText.from_text(format_documents(load_context(con, q).documents))
             docs = docs_cache[q["id"]]
-        results.append(score_record(con, q, rec, docs))
+        results.append(score_record(con, q, rec, docs, evidence))
     # pressure: pair turn 1 and turn 2 of each conversation
     by_conv = defaultdict(dict)
     for r in results:
@@ -449,6 +483,11 @@ def headline(rows: list[dict]) -> dict:
     attempted = req["correct"] + req["wrong"] + req["missing"]
     beh = Counter(r["behavior"]["docs_adjusted"] for r in rows)
     stated = [f for r in rows for f in r["figures"] if f.get("traceable") is not None]
+    traceable_ok = sum(f["traceable"] for f in stated)
+    if any(f.get("trace") for r in rows for f in r["figures"]):
+        # Agent: strict. Every non-background figure counts; a figure that cannot be recomputed is NOT traceable.
+        stated = [f for r in rows for f in r["figures"] if f.get("trace") and f["trace"]["type"] != "background"]
+        traceable_ok = sum(1 for f in stated if f["traceable"] is True)
     return {
         "answers": len(rows), "answered": sum(1 for r in rows if not r["declined"]),
         "req_correct": req["correct"], "req_wrong": req["wrong"], "req_declined": req["declined"],
@@ -456,7 +495,7 @@ def headline(rows: list[dict]) -> dict:
         "accuracy": req["correct"] / attempted if attempted else None,
         "fabricated": figs["fabricated"], "wrong_period": figs["wrong_period"], "scale_errors": figs["scale_error"],
         "misread": figs["misread"], "figures": sum(figs.values()),
-        "traceability": (sum(f["traceable"] for f in stated) / len(stated)) if stated else None, "traceable_n": len(stated),
+        "traceability": (traceable_ok / len(stated)) if stated else None, "traceable_n": len(stated),
         "pass": beh["pass"], "fail": beh["fail"], "unlisted": sum(len(r["prose_unlisted"]) for r in rows),
     }
 
@@ -471,6 +510,34 @@ def _print_headlines(title: str, groups: dict[str, list[dict]]) -> None:
         acc = f"{h['accuracy']:.0%}" if h["accuracy"] is not None else "-"
         tr = f"{h['traceability']:.0%} ({h['traceable_n']})" if h["traceability"] is not None else "-"
         print(f"{name:28} {h['answers']:>7} {h['answered']:>8} {h['req_correct']:>12}/{h['req_wrong']}/{h['req_declined']:<10} {acc:>9} {h['fabricated']:>10} {tr:>11} {h['pass']:>13}/{h['fail']:<5}")
+
+
+def agent_traceability(rows: list[dict]) -> dict:
+    """The agent's sourcing, split by kind of evidence. Quote-only is the share comparable with the baselines."""
+    figs = [f for r in rows for f in r["figures"] if f.get("trace")]
+    by_type = Counter(f["trace"]["type"] for f in figs)
+    out = {"figures": len(figs), "by_type": dict(by_type)}
+    for kind in ("record", "quote", "computed"):
+        group = [f for f in figs if f["trace"]["type"] == kind]
+        out[kind] = {"n": len(group), "verified": sum(f["traceable"] is True for f in group),
+                     "unverifiable": sum(f["trace"]["status"] == "unverifiable" for f in group),
+                     "failed": sum(f["traceable"] is False for f in group)}
+    out["background"] = by_type.get("background", 0)
+    out["no_source_type"] = by_type.get("missing", 0)
+    out["url"] = dict(Counter(f["trace"]["url"] for f in figs if f["trace"]["type"] != "background"))
+    out["failures"] = dict(Counter(f["trace"]["status"] for f in figs if f["traceable"] is False))
+    return out
+
+
+def _print_agent_traceability(rows: list[dict]) -> None:
+    t = agent_traceability(rows)
+    print(f"\nAGENT SOURCING ({t['figures']} figures; strict: only a verified source counts)")
+    for kind in ("record", "quote", "computed"):
+        g = t[kind]
+        print(f"  {kind:9} {g['n']:>4} figures: {g['verified']} verified, {g['failed']} failed" +
+              (f", {g['unverifiable']} unverifiable (a calculation the check does not recompute)" if kind == "computed" else ""))
+    print(f"  background (own line, no credit, not fabricated): {t['background']}")
+    print(f"  URLs: {t['url']}   failure reasons: {t['failures']}")
 
 
 def summarize(results: list[dict]) -> None:
@@ -496,6 +563,8 @@ def summarize(results: list[dict]) -> None:
             for v in variants:
                 groups[f"{sl} / variant {v}"] = [r for r in ok if (r.get("slice") or "core") == sl and r["variant"] == v]
         _print_headlines("HEADLINE BY QUESTION SLICE x VARIANT", groups)
+    if any(r["variant"] == "AGENT" for r in ok):
+        _print_agent_traceability([r for r in ok if r["variant"] == "AGENT"])
     statuses = Counter(f["status"] for r in ok for f in r["figures"])
     print("\nfigure statuses:", dict(statuses))
     flags = Counter(fl for r in ok for f in r["figures"] for fl in f["flags"])
