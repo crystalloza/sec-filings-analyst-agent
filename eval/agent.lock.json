@@ -1,0 +1,20 @@
+{
+  "version": "agent-v1",
+  "frozen_at": "2026-11-07T06:34:24.127288+00:00",
+  "hash": "a09782e4ce341186",
+  "config": {
+    "models": {
+      "dev": {
+        "anthropic": "claude-haiku-5-5"
+      },
+      "measured": {
+        "anthropic": "claude-sonnet-5-5"
+      }
+    },
+    "effort": {
+      "dev": "medium",
+      "measured": "high"
+    }
+  },
+  "max_data_calls": 8
+}

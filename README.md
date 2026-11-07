@@ -11,7 +11,7 @@ Finance teams spend a lot of time pulling numbers out of 10-Ks and double-checki
 
 It covers NVIDIA, AMD, Intel and Microsoft from FY2018 on, using SEC EDGAR filings. I built the tests before the agent. That way I know what a plain model already gets right, and what an agent really needs to fix.
 
-**Where it stands:** the data pipeline, the no-tools baseline, the automatic checks and the LLM judge are built. The judge has been checked against my own hand labels. The two tool servers the agent will use (numbers and filing text) are built and tested. The agent loop itself isn't built yet.
+**Where it stands:** the data pipeline, the no-tools baseline, the automatic checks and the LLM judge are built. The judge has been checked against my own hand labels. The agent is built and has been run once on its frozen setup. The judge hasn't scored the agent's answers yet.
 
 Here is a real answer from the baseline (a model given the filing and nothing else). The user pushed back after the model had already corrected a false 55%:
 
@@ -35,11 +35,11 @@ Three rules run through all of it:
 2. **Refuse instead of guess.** If the data isn't there, the answer is "I don't have that."
 3. **Code checks facts, a judge checks language.** Numbers are verified against the SEC data in code. The LLM judge only scores what code can't, like whether a false claim was corrected. The judge itself is validated against hand labels.
 
-**The agent (in progress):** a model that calls two small MCP servers. Both are built; the loop that drives them is next. The tools take set parameters like ticker and period, never raw SQL.
+**The agent:** a model (Sonnet 5.5) that calls two small MCP servers. The tools take set parameters like ticker and period, never raw SQL.
 - **`sec-facts`** (numbers): every value comes back as a record with a readable id like `NVDA:revenue:FY2025:FY:10-K`, a link to the filing on EDGAR, and flags for derived or restated values (with the original value and why it changed). Missing data comes back empty with a reason.
 - **`sec-filings`** (text): search by meaning over the 10-K paragraphs, using a small embedding model that runs on the laptop, so the text never leaves the machine.
 
-It will be tested on the same questions, checks and judge as the baseline, so the comparison is fair. The design decisions are in [`docs/agent_design.md`](docs/agent_design.md).
+It gets at most 8 tool calls per question, must cite a record id or quote for every figure, and may use general knowledge only if it says so. It is scored on the same questions, checks and judge as the baselines. The design decisions are in [`docs/agent_design.md`](docs/agent_design.md).
 
 How the testing works, and what it found, is in the Evaluation section below.
 
@@ -94,7 +94,7 @@ A figure that fails is classified, not just failed: `fabricated`, `misread`, `wr
 ### How it is run
 - **Questions:** 57 in `eval/questions.jsonl`: 46 core (lookups, derived metrics, trends, cross-company, narrative, false premises, misuse, unanswerable, quarterly, balance sheet) and an 11-question **freshness** slice on the newest periods (FY2026, FY2027 quarters).
 - **Baselines (no tools, one model call each, Sonnet 5.5):** **A** the right 10-K section plus a minimal prompt; **B** the same with careful rules; **C** *closed-book*, no documents at all. Prompts are frozen by hash before any measured run.
-- **Checks:** `src/sec_filings_analyst_agent/checks.py`, tested by 186 pytest cases, including known-answer tests that generate a perfect answer for every question from the warehouse and corrupt it in known ways. Ratios are recomputed independently in Python, not read from the SQL.
+- **Checks:** `src/sec_filings_analyst_agent/checks.py`, tested with known-answer tests that generate a perfect answer for every question from the warehouse and corrupt it in known ways. The agent's traceability check is tested the same way, on real tool output, and its baseline scores are pinned by a regression test. Ratios are recomputed independently in Python, not read from the SQL.
 
 ### Baseline results (Sonnet 5.5, one repeat)
 | | Answered | Required figures: correct / wrong / declined | Fabricated | Traceable |
@@ -105,9 +105,24 @@ A figure that fails is classified, not just failed: `fabricated`, `misread`, `wr
 
 On the 11 **freshness** questions, closed-book answered none (it declined all), while A and B answered the 4 annual questions correctly and declined the 7 quarterly ones, because those quarters are newer than any 10-K.
 
+### Agent results (Sonnet 5.5, frozen setup, one repeat)
+| | **Agent** | **A** | **B** | **C** |
+|---|---|---|---|---|
+| What it has | Tools over both servers | Right 10-K section, minimal prompt | Same section, careful rules | No documents |
+| Questions answered | 48 of 57 | 34 | 34 | 19 |
+| Required figures: correct / wrong / declined | **66 / 0 / 0** | 51 / 0 / 15 | 51 / 0 / 15 | 25 / 1 / 40 |
+| Fabricated figures | 0 | 0 | 0 | 0 |
+| Behavior: pass / fail | 51 / 0 | 50 / 1 | 50 / 1 | 26 / 25 |
+| Traceable | 96% (267 of 277) | 98% (194 of 197) | 99% (193 of 194) | 0% (0 of 26) |
+| Held under pushback | 3 of 3 | 3 of 3 | 3 of 3 | not run |
+
+The agent answered every question that has an answer in the data, including the quarterly, balance-sheet and newest-quarter ones the document baselines had to decline. The 9 questions it declined are the 9 that should be declined. It never used all 8 tool calls (the most any question took was 6).
+
+Traceability is about level with the baselines, not better: 96% against 98-99%. Its record citations verified 172 of 173, its quotes 61 of 65, and 5 computed figures are sums of text table-lines that can't be recomputed, so they count as untraceable. What the agent adds is sourced figures for many more questions. Every URL it gave was one a tool had returned. It used general knowledge on 3 answers and labelled it each time.
+
 ### What the results mean
 - **Fabrication is not what separates systems here.** A frontier model recalls mega-cap financials accurately and declines when unsure; with the right filing in front of it, it did not fabricate a single figure. The original hypothesis (a text-only baseline invents numbers) was **not supported** for this model and these companies.
-- **What does separate them is traceability and coverage.** Closed-book figures cannot be checked by a reader (0% traceable). Document-based baselines cannot answer anything outside the text they were given: 13% of required figures in the core set, and 8 of the 9 answerable freshness figures. A system with structured data and tools can. Freshness is not a lasting edge: it only reflects how recently I pulled the data, and I haven't built a refresh job.
+- **What does separate them is traceability and coverage.** Closed-book figures cannot be checked by a reader (0% traceable). Document-based baselines cannot answer anything outside the text they were given: 13% of required figures in the core set, and 8 of the 9 answerable freshness figures. The agent can: it got all 66 required figures right. Freshness is not a lasting edge: it only reflects how recently I pulled the data, and I haven't built a refresh job.
 - **Calibration is good.** Unanswerable questions were declined, false premises were corrected, and the model held its position under scripted pushback in every case tested. The one closed-book failure was agreeing with a user's false number (55%) when nothing anchored the answer.
 
 ### The LLM judge
@@ -131,11 +146,16 @@ I relabeled 15 items a day later, without seeing my first answers (not the six I
 - The baselines are **deliberately favourable**: the correct filing is chosen for the model and the answer format forces periods and units. Real retrieval would be harder.
 - Most questions concern **four heavily-memorised companies** over FY2023-2025. Results say little about obscure companies or unseen filings.
 - **One repeat** per question; run-to-run variance is not yet measured. Differences between A and B are within noise.
+- **The agent was developed on the same 57 questions it is measured on**, so its numbers are probably somewhat optimistic. Changes after seeing dev results were bug fixes and one prompt clarification; none changed a rule to chase a score (listed in `docs/agent_design.md`). What I would do differently in a future iteration: write a fresh held-out question set and run the frozen agent and baselines on it. I didn't here because this is a practice project.
+- The pushback test is only **3 questions**, and every system held on all of them, so it doesn't separate them.
+- The quote check ignores small bare numbers and number words ("from 5 to 8 years", "four segments"). That is conservative and applies equally to the baselines and the agent, but it under-counts traceability a little (4 of the agent's 65 quote figures).
+- The judge has not yet scored the agent, so the language side of its behavior (refusal wording, how it corrected a false claim) is checked by code only.
+- The agent's run logs hold full tool results. That is fine for public filings, but on confidential data the logs would need the same protection as the data.
 - "Misread versus fabricated" is a heuristic over numbers found in the documents. Figures marked segment, non-GAAP or other are supported by quotes, not compared with the warehouse, and their fiscal period is not verified.
 - The judge is validated on 78 items, and only **2 real answers** in that set actually fail. It catches planted failures well, but its real-world failure detection rests on very few examples. I also labeled alone; a second labeler is better.
 - The labeled set mixes real and seeded answers, so agreement overstates how it would do on a natural mix.
 - "Unanswerable" means not answerable **from this corpus**; a closed-book model may legitimately know some of it.
-- The "no personal investment advice" check only sees whether an answer **volunteers** advice or a forecast. None of the questions actually ask for advice ("should I buy AMD?"), so refusal under direct invitation is **not tested**. Most items here are easy passes. Adding advice-seeking questions is planned for when the agent exists.
+- The "no personal investment advice" check only sees whether an answer **volunteers** advice or a forecast. None of the questions actually ask for advice ("should I buy AMD?"), so refusal under direct invitation is **not tested**. Most items here are easy passes. Adding advice-seeking questions is a future improvement.
 
 ## Getting started
 You need [uv](https://docs.astral.sh/uv/) and, for anything that calls a model, an Anthropic API key. The SEC asks for a contact email in every request, so you need one of those too. It only lives in your local `.env`, which is gitignored.
@@ -162,6 +182,11 @@ Some tests compare against the warehouse and the search index, so run them after
 # baseline: add --mode dev for the cheap model; a full measured repeat is about $7
 uv run python -m sec_filings_analyst_agent.baseline --mode measured --variant all
 uv run python -m sec_filings_analyst_agent.checks eval/runs/<run>.jsonl
+
+# agent: freeze the setup once, then run (a full measured run is about $3; add --pressure for the pushback questions)
+uv run python -m sec_filings_analyst_agent.agent --freeze
+uv run python -m sec_filings_analyst_agent.agent --mode measured
+uv run python -m sec_filings_analyst_agent.checks eval/runs/agent_measured_<run>.jsonl
 
 # judge: --plan shows counts and an estimated cost without calling the API; a full run is about $13
 uv run python -m sec_filings_analyst_agent.judge --plan --runs eval/runs/<run>.jsonl
