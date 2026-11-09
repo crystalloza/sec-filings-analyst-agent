@@ -26,7 +26,7 @@ Behind that answer: each figure is tied to a record such as `INTC:gross_margin:F
 | Skill | Where it shows |
 |---|---|
 | Python, SQL, Git | A layered SQL warehouse (raw → clean → metrics → filing text), a tested Python package, small reviewable commits |
-| LLMs, prompts, agents, MCP, evals | Frozen prompts, a tool-use loop, two MCP servers, a two-layer evaluation, a judge validated against human labels |
+| LLMs, prompts, agents, RAG, MCP, evals | Frozen prompts, a tool-use loop, agentic RAG over the filings, two MCP servers, a two-layer evaluation, a judge validated against human labels |
 | Structured and unstructured data via APIs | XBRL financial facts and 10-K text, combined through the SEC and Anthropic APIs |
 | Product and program judgment | Evaluation built before the agent, comparisons committed before the run, an MVP scoped on purpose, decisions written down in [`docs/decisions.md`](docs/decisions.md) and [`docs/agent_design.md`](docs/agent_design.md) |
 | Responsible AI, privacy, governance | Refuse rather than guess, tools with fixed parameters (no raw SQL), a source for every figure, local embeddings, every limitation listed |
@@ -72,6 +72,7 @@ question ──► Agent loop (Sonnet 5.5, at most 8 tool calls)
                                 ──► accuracy check vs SEC data ──► scores
                                 ──► LLM judge (language) ─┘
 ```
+- **It is agentic RAG over the filing text, plus lookup over structured data.** The model decides when to retrieve and what to search for, and can search again. The 10-K paragraphs are found by meaning with a local embedding model, and the exact figures come from the warehouse by fixed parameters.
 - **Tools take fixed parameters, never raw SQL.** That bounds what the agent can do and makes its reasoning auditable.
 - **Every number is a record with a readable id** (`NVDA:revenue:FY2025:FY:10-K`), a filing link, and flags for derived or restated values, including the original value and why it changed. Missing data comes back empty, with a reason.
 - **General knowledge is allowed only if the agent says so.** It never presents it as database fact.
@@ -80,7 +81,7 @@ question ──► Agent loop (Sonnet 5.5, at most 8 tool calls)
 ## What the evaluation showed
 **Can the agent be trusted? For looking up and comparing figures, and for knowing when not to answer: yes, on these questions.** It got every required figure right, fabricated none, declined exactly the questions that should be declined, and gave a checkable source for 96% of its figures. **For explanations of why something happened: not without a human check.** 2 of its 10 narrative answers added a claim the filing didn't support, the same weakness the baselines have. All of this is on four large companies and questions the agent was refined on, so treat the numbers as the best case, not a guarantee.
 
-**How I would close the remaining gaps in a future iteration:** to raise confidence in narrative answers, have the agent attach a source passage to every explanatory claim, not just every number, so the judge checks one claim against one passage instead of grading a whole story, and grow the narrative set from 10 answers to 40 or more, with repeats and a second human labeler. Then run the frozen agent and baselines on a fresh held-out question set.
+**How I would close the remaining gaps in a future iteration:** to raise confidence in narrative answers, have the agent attach a source passage to every explanatory claim, not just every number, so the judge checks one claim against one passage instead of grading a whole story, and grow the narrative set from 10 answers to 40 or more, with repeats and a second human labeler. I would also measure retrieval on its own (does the right paragraph appear in the top 5?), to tell a retrieval miss from over-claiming. Then run the frozen agent and baselines on a fresh held-out question set.
 
 One run per system on 57 questions, Sonnet 5.5. The agent's setup was frozen by hash before its run.
 
@@ -123,6 +124,7 @@ Full method, per-slice results and every table: [`docs/evaluation.md`](docs/eval
 - **One repeat, four large companies.** Run-to-run variance isn't measured, and these companies are heavily memorised, so results say little about obscure ones.
 - **The baselines are deliberately favourable.** I picked the right filing for them. Real retrieval would be harder.
 - **Small samples in places.** The pushback test is 3 questions, and only 2 real answers in my judge-validation set actually fail.
+- **Retrieval wasn't measured on its own.** I judged the end result, not how often the right paragraph was in the top results, so I can't tell a retrieval miss from the agent over-claiming.
 - **Not tested:** advice-seeking questions ("should I buy AMD?"), so refusal under direct invitation is unmeasured.
 - **A conservative quote check.** It ignores small bare numbers and number words, which under-counts traceability slightly, for the agent and baselines alike.
 - **Logs hold full tool results.** Fine for public filings. On confidential data, they would need the same protection as the data.
