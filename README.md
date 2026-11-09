@@ -129,12 +129,68 @@ Full method, per-slice results and every table: [`docs/evaluation.md`](docs/eval
 
 The full list is in [`docs/evaluation.md`](docs/evaluation.md).
 
-## Repo map
+## Code map: the agent and the harness
+Most of this repo is not the agent. It is the machinery that measures it.
+
+```mermaid
+flowchart LR
+  subgraph DATA["1 · Data layer: builds the warehouse"]
+    SEC["SEC EDGAR"] --> PIPE["fetch → flatten → parse → build<br/>(sql/ raw → clean → metrics)"]
+    PIPE --> WH[("DuckDB warehouse<br/>facts + 10-K paragraphs")]
+  end
+
+  subgraph TOOLS["2 · Tool layer: the agent's only door to the data"]
+    FACTS["sec-facts · MCP server<br/>facts_tools.py"]
+    FIL["sec-filings · MCP server<br/>filing_search.py"]
+  end
+
+  subgraph SUT["3 · Systems under test"]
+    AGENT["THE AGENT<br/>agent.py · prompt · answer format"]
+    BASE["Baselines A / B / C<br/>no tools · baseline.py"]
+  end
+
+  subgraph HARNESS["4 · The harness: measures everything"]
+    Q["57 questions<br/>+ answer key"]
+    REF["reference.py<br/>independent recomputation"]
+    CHK["Code checks<br/>checks · numbers · quotes · traceability"]
+    JDG["LLM judge<br/>judge.py"]
+    VAL["Judge validation<br/>seeds · labeling · agreement · retest"]
+  end
+
+  WH --> FACTS
+  WH --> FIL
+  AGENT <--> FACTS
+  AGENT <--> FIL
+  WH -. "filing text" .-> BASE
+  AGENT --> LOG[("run log<br/>eval/runs/*.jsonl")]
+  BASE --> LOG
+  Q --> CHK
+  WH --> REF --> CHK
+  LOG --> CHK
+  LOG --> JDG
+  VAL -. "validates" .-> JDG
+  CHK --> RES["scores → README tables"]
+  JDG --> RES
+
+  classDef agent fill:#d7f0e0,stroke:#2f7d4f,stroke-width:2px;
+  class AGENT agent;
+```
+
+| Layer | Roughly | What it is |
+|---|---|---|
+| Data layer | 1,500 lines | Turns SEC data into a warehouse (`fetch`, `flatten`, `parse_filings`, `build`, `sql/`) |
+| Tool layer | 650 lines | The two MCP servers, the agent's only door to the data |
+| **The agent** | **450 lines** | `agent.py`, its prompt and its answer format |
+| Baselines | 480 lines | The no-tools models it is compared with |
+| **The harness** | **2,500 lines** | Code checks, traceability, the LLM judge and its validation |
+
+The harness is more than half the code. I built the measuring before the agent, and the agent writes a run log that the harness only reads, so it can't influence its own scores. File by file: [`docs/architecture.md`](docs/architecture.md).
+
 ```
 sql/        warehouse layers: raw → clean → metrics → filing text
 src/        pipeline, the two MCP servers, the agent, the checks, the judge
 eval/       questions, run logs, judge runs, my labels, frozen locks
-docs/       decisions.md (why each choice) · agent_design.md · evaluation.md · data_and_metrics.md · running.md
+docs/       decisions.md (why each choice) · architecture.md · agent_design.md · evaluation.md · data_and_metrics.md · running.md
 tests/      327 tests, including break-it-on-purpose tests for the checks
 ```
 Setup and commands, including what each run costs: [`docs/running.md`](docs/running.md). Metric and data definitions: [`docs/data_and_metrics.md`](docs/data_and_metrics.md).
