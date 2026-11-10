@@ -4,7 +4,7 @@ Decided before building, so the evaluation can't be bent to fit the result. Ever
 
 ## Why an agent at all
 The no-tools baselines made almost no number mistakes (0 fabricated), so accuracy isn't the gap. The gaps were:
-- **Coverage:** 13 answerable questions (quarterly figures, balance-sheet items, the newest quarters) were declined because the text the baseline was given didn't contain them. The warehouse does.
+- **Coverage:** 13 answerable questions (quarterly figures, balance-sheet items, the newest quarters) were declined because the text the baseline was given didn't contain them. The database does.
 - **Checkability:** every figure should show where it came from.
 
 Freshness is **not** claimed as an advantage. The agent is only as current as the last data refresh (no refresh job exists yet), and a model with web search could be fresher. The one real point is control: I can refresh a database, not retrain a public model.
@@ -66,7 +66,7 @@ Changes made after seeing dev results:
 
 Changes to the agent's traceability check after seeing agent output (the baseline scores did not move; a regression test pins them):
 1. A figure taken from a derived record (such as total liabilities) counts for "derive with label."
-2. A stored growth rate with no independent recomputation in the warehouse gets its own tier (`verified_record`) instead of "unsupported."
+2. A stored growth rate with no independent recomputation in the database gets its own tier (`verified_record`) instead of "unsupported."
 3. Record and paragraph ids written in the answer's prose are not counted as unlisted numbers.
 4. A stored percent can no longer support a dollar concept (a growth rate labelled as gross profit).
 5. A number the user wrote in a pushback message is not counted as an unlisted claim (agent only).

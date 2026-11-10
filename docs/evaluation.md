@@ -20,7 +20,7 @@ A figure that fails is classified, not just failed: `fabricated`, `misread`, `wr
 - **Questions:** 57 in `eval/questions.jsonl`: 46 core (lookups, derived metrics, trends, cross-company, narrative, false premises, misuse, unanswerable, quarterly, balance sheet) and an 11-question **freshness** slice on the newest periods (FY2026, FY2027 quarters).
 - **Baselines (no tools, one model call each, Sonnet 5.5):** **A** the right 10-K section plus a minimal prompt; **B** the same with careful rules; **C** *closed-book*, no documents at all. Prompts are frozen by hash before any measured run.
 - **Agent (Sonnet 5.5, tools over two MCP servers):** at most 8 tool calls per question; setup frozen by hash (prompt, answer format, tool definitions, model, effort) before the measured run. Design and the list of changes made during development are in `docs/agent_design.md`.
-- **Checks:** `src/sec_filings_analyst_agent/checks.py`, tested with known-answer tests that generate a perfect answer for every question from the warehouse and corrupt it in known ways. The agent's traceability check is tested the same way, on real tool output, and its baseline scores are pinned by a regression test. Ratios are recomputed independently in Python, not read from the SQL.
+- **Checks:** `src/sec_filings_analyst_agent/checks.py`, tested with known-answer tests that generate a perfect answer for every question from the database and corrupt it in known ways. The agent's traceability check is tested the same way, on real tool output, and its baseline scores are pinned by a regression test. Ratios are recomputed independently in Python, not read from the SQL.
 
 ## Baseline results (Sonnet 5.5, one repeat)
 | | Answered | Required figures: correct / wrong / declined | Fabricated | Traceable |
@@ -88,10 +88,16 @@ I relabeled 15 items a day later, without seeing my first answers (not the six I
 - The quote check ignores small bare numbers and number words ("from 5 to 8 years", "four segments"). That is conservative and applies equally to the baselines and the agent, but it under-counts traceability a little (4 of the agent's 65 quote figures).
 - The narrative check judges the agent only against what its tools returned, so an answer can fail because the agent fetched too little, not only because it over-claimed.
 - The agent's run logs hold full tool results. That is fine for public filings, but on confidential data the logs would need the same protection as the data.
-- "Misread versus fabricated" is a heuristic over numbers found in the documents. Figures marked segment, non-GAAP or other are supported by quotes, not compared with the warehouse, and their fiscal period is not verified.
+- "Misread versus fabricated" is a heuristic over numbers found in the documents. Figures marked segment, non-GAAP or other are supported by quotes, not compared with the database, and their fiscal period is not verified.
 - The judge is validated on 78 items, and only **2 real answers** in that set actually fail. It catches planted failures well, but its real-world failure detection rests on very few examples. I also labeled alone; a second labeler is better.
 - The labeled set mixes real and seeded answers, so agreement overstates how it would do on a natural mix.
 - "Unanswerable" means not answerable **from this corpus**; a closed-book model may legitimately know some of it.
 - The "no personal investment advice" check only sees whether an answer **volunteers** advice or a forecast. None of the questions actually ask for advice ("should I buy AMD?"), so refusal under direct invitation is **not tested**. Most items here are easy passes. Adding advice-seeking questions is a future improvement.
 
-**How I would close the remaining gaps in a future iteration:** to raise confidence in narrative answers, have the agent attach a source passage to every explanatory claim, not just every number, so the judge checks one claim against one passage instead of grading a whole story, and grow the narrative set from 10 answers to 40 or more, with repeats and a second human labeler. I would also measure retrieval on its own (does the right paragraph appear in the top 5?), to tell a retrieval miss from over-claiming. Then run the frozen agent and baselines on a fresh held-out question set.
+**How I'd aim to improve narrative explanations in a future iteration:** 
+- Make it back up every reason, not just every number. 
+- Keep "the filing says" apart from "I'm guessing." Let it say "the filing doesn't say why." Right now it fills the gap. I'd tell it that's an acceptable answer.
+- Break big questions into smaller searches. For "how did this change from 2023 to 2025," search each year and topic separately, then compare.
+- Measure retrieval on its own (does the right paragraph appear in the top 5?), to tell a retrieval miss from over-claiming. Then run the frozen agent and baselines on a fresh held-out question set.
+- Test a stronger embedding model. I used a small local one. I'd try a bigger embedding model on the narrative questions and see how often the right paragraph lands in the top 5.
+- Pull back more results, or search two ways. A larger top-k, plus mixing keyword and meaning search (filings repeat exact terms that keyword search catches), and a re-ranker that reorders the top hits.

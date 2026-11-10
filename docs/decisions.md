@@ -8,7 +8,7 @@ The choices that shaped this project, with the reasoning and what each one cost.
 Why: I wanted to practice the whole lifecycle (data, tests, agent, results) quickly, so I scoped a thin slice. NVIDIA, AMD, Intel and Microsoft were chosen because their fiscal years end in different months (January, December, June) and their XBRL tags behave differently.
 Cost: the companies are heavily memorised, so the results say little about obscure ones.
 
-**2. A local DuckDB warehouse with plain SQL files, not a cloud platform.**
+**2. A local DuckDB database with plain SQL files, not a cloud platform.**
 Why: it rebuilds from scratch with one command, I can read every layer, and the SQL stays portable (raw → clean → metrics, the same idea as bronze/silver/gold).
 Cost: it runs on one machine. I kept the SQL portable on purpose, so it could move to a cloud platform.
 
@@ -39,7 +39,7 @@ Why: using the agent's model for the baselines isolates what the tools add. A is
 Cost: I gave the baselines the right filing, which flatters them. That's disclosed.
 
 **9. Code checks facts, a judge checks language.**
-Why: numbers have a right answer in the warehouse, so code should score them. The judge only handles what code can't, such as whether a false claim was corrected, which shrinks the part of the evaluation that is itself unreliable.
+Why: numbers have a right answer in the database, so code should score them. The judge only handles what code can't, such as whether a false claim was corrected, which shrinks the part of the evaluation that is itself unreliable.
 Cost: two scoring systems to build and keep consistent.
 
 **10. When the first result contradicted my hypothesis, I changed the thesis, not the data.**

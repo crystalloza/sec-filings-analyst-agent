@@ -5,9 +5,9 @@ Most of this repo is not the agent. It is the machinery that measures the agent.
 ## The big picture
 ```mermaid
 flowchart LR
-  subgraph DATA["1 · Data layer: builds the warehouse"]
+  subgraph DATA["1 · Data layer: builds the database"]
     SEC["SEC EDGAR"] --> PIPE["fetch → flatten → parse → build<br/>(sql/ raw → clean → metrics)"]
-    PIPE --> WH[("DuckDB warehouse<br/>facts + 10-K paragraphs")]
+    PIPE --> WH[("DuckDB database<br/>facts + 10-K paragraphs")]
   end
 
   subgraph TOOLS["2 · Tool layer: the agent's only door to the data"]
@@ -49,14 +49,14 @@ flowchart LR
 
 The **run log** is the only link between the systems being tested and the harness. The agent writes it, and the harness only reads it, so the agent cannot influence how it is scored. The two MCP servers are the agent's only door to the data.
 
-## 1. Data layer: turns SEC data into a warehouse
+## 1. Data layer: turns SEC data into a database
 | File | What it does |
 |---|---|
 | `fetch.py` | Downloads each company's structured financial facts from SEC EDGAR and saves them untouched |
 | `flatten.py` | Flattens that JSON into a table (the **raw** layer) |
 | `fetch_filings.py` | Downloads each company's 10-K filings as HTML |
 | `parse_filings.py`, `text.py` | Parses the HTML into paragraphs (Business, Risk Factors, MD&A) with stable ids |
-| `sql/01_raw.sql` to `04_filing_text.sql` | The warehouse layers: raw → **clean** (latest filing wins, tag mapping, fiscal labels, derived Q4) → **metrics** (margins, growth) → filing text |
+| `sql/01_raw.sql` to `04_filing_text.sql` | The database layers: raw → **clean** (latest filing wins, tag mapping, fiscal labels, derived Q4) → **metrics** (margins, growth) → filing text |
 | `build.py` | Rebuilds the whole DuckDB file from scratch by running the SQL files in order |
 
 ## 2. Tool layer: what the agent can reach
@@ -88,7 +88,7 @@ The servers hold no logic of their own, so the logic can be tested without runni
 ## 5. The harness: measures everything
 **Questions and ground truth**
 - `eval/questions.jsonl` has the 57 questions and the right answers.
-- `reference.py` recomputes the answers from the warehouse in plain Python, independently of the SQL, so a bug in one cannot hide in the other.
+- `reference.py` recomputes the answers from the database in plain Python, independently of the SQL, so a bug in one cannot hide in the other.
 
 **Code checks** (for anything with a right answer)
 | File | What it does |
@@ -119,7 +119,7 @@ The servers hold no logic of their own, so the logic can be tested without runni
 
 ## Workflow and boundaries
 1. `agent.py` starts the servers and gives the model the question and the tool menu.
-2. The model calls tools. `facts_tools.py` queries the warehouse, and `filing_search.py` searches the text.
+2. The model calls tools. `facts_tools.py` queries the database, and `filing_search.py` searches the text.
 3. The model calls `submit_answer`, and `agent.py` writes everything to the run log.
 4. `checks.py` and `traceability.py` read that log and score each figure against the SEC data and the tool results.
 5. `judge.py` reads the same log and scores the language.

@@ -10,7 +10,7 @@ uv sync
 cp .env.example .env     # then fill in SEC_CONTACT_EMAIL and ANTHROPIC_API_KEY
 ```
 
-**Build the data** (no API key needed; the downloaded data is not in the repo). Everything except the embeddings step takes under a minute. Tests that need the warehouse or the search index skip with a clear reason until you have built them.
+**Build the data** (no API key needed; the downloaded data is not in the repo). Everything except the embeddings step takes under a minute. Tests that need the database or the search index skip with a clear reason until you have built them.
 ```bash
 uv run python -m sec_filings_analyst_agent.fetch
 uv run python -m sec_filings_analyst_agent.flatten
@@ -20,7 +20,7 @@ uv run python -m sec_filings_analyst_agent.build
 uv run python -m sec_filings_analyst_agent.filing_search --build   # local embeddings for text search, 5-15 min depending on the machine
 uv run pytest
 ```
-Some tests compare against the warehouse and the search index, so run them after the build. The two tool servers run with `uv run python -m sec_filings_analyst_agent.mcp_facts` and `...mcp_filings`.
+Some tests compare against the database and the search index, so run them after the build. The two tool servers run with `uv run python -m sec_filings_analyst_agent.mcp_facts` and `...mcp_filings`.
 
 **Run the evaluation** (these cost real money):
 ```bash

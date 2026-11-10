@@ -1,6 +1,6 @@
 # Data pipeline and metric definitions
 
-The detail behind the README: how the SEC data becomes a warehouse the agent can query, and exactly how every number is defined.
+The detail behind the README: how the SEC data becomes a database the agent can query, and exactly how every number is defined.
 
 ## The pipeline
 ```
